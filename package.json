@@ -1,0 +1,57 @@
+{
+  "name": "birdwatching_handbook",
+  "version": "2.0.0",
+  "description": "A handbook for birdwatching",
+  "main": "src/frontend/js/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": [],
+  "author": "t2ek1ng0",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12",
+    "nodemon": "^3.1.10"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.86.0",
+    "axios": "^1.13.1",
+    "form-data": "^4.0.5",
+    "node-fetch": "^3.3.2"
+  },
+  "build": {
+    "appId": "org.gaojiyingwen.birdwatchinghandbook",
+    "productName": "birdwatching_handbook",
+    "copyright": "Copyright © Powered by t2zk1ng0",
+    "directories": {
+      "output": "build_output"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "warningsAsErrors": false,
+      "artifactName": "birdwatching_handbook_Setup.exe",
+      "installerHeaderIcon": "favicon.ico"
+    },
+    "buildDependenciesFromSource": false,
+    "forceCodeSigning": false,
+    "extraResources": [
+      {
+        "from": "dist/model_predict",
+        "to": "model_predict"
+      },
+      {
+        "from": "data/records.json",
+        "to": "."
+      }
+    ]
+  }
+}

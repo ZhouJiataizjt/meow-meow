@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>我的观鸟记录</title>
+  <link rel="stylesheet" href="../css/common.css">
+  <style>
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+    th { background-color: #f8f9fa; font-weight: 600; color: #2c3e50; cursor: pointer; user-select: none; }
+    th:hover { background-color: #e9ecef; }
+    tr:hover { background-color: #f1f1f1; }
+    tbody { display: table-row-group; }
+    thead { display: table-header-group; }
+    
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .search-box { flex: 1; max-width: 300px; margin-right: 20px; margin-bottom: 0; }
+
+    .delBtn {
+        background-color: #e74c3c;
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+    .delBtn:hover { background-color: #c0392b; }
+
+    .editBtn {
+        background-color: #3498db;
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+    <div class="container" style="max-width: 100%;">
+        
+        <h1>📝 我的观鸟记录表</h1>
+
+        <div class="toolbar">
+            <input id="search" class="search-box" placeholder="🔍 搜索记录...">
+            <button onclick="add_records()">➕ 添加记录</button>
+        </div>
+
+        <table>
+          <thead>
+          <tr>
+            <th data-field="time">观测时间 ↕</th>
+            <th data-field="location">地点 ↕</th>
+            <th data-field="count">数量 ↕</th>
+            <th data-field="species">种类 ↕</th>
+            <th data-field="gender">性别 ↕</th>
+            <th>操作</th>
+          </tr>
+          </thead>
+          <tbody id="records_body"></tbody>
+        </table>
+    </div>
+
+<script>
+  const { ipcRenderer } = require('electron')
+  let records = []
+
+  async function loadRecords() {
+    records = await ipcRenderer.invoke('get_records')
+    displayRecords(records)
+  }
+
+  function displayRecords(data) {
+    const tbody = document.getElementById('records_body')
+    tbody.innerHTML = ''
+    data.forEach((r, idx) => {
+      const tr = document.createElement('tr')
+      const idAttr = r.id ? `data-id="${r.id}"` : '';
+      tr.innerHTML = `
+            <td>${r.time}</td>
+            <td>${r.location}</td>
+            <td>${r.count}</td>
+            <td>${r.species}</td>
+            <td>${r.gender}</td>
+            <td>
+                <button class="editBtn" data-index="${idx}" ${idAttr}>编辑</button>
+                <button class="delBtn" data-index="${idx}" ${idAttr}>删除</button>
+            </td>
+        `
+      tbody.appendChild(tr)
+    })
+
+    // 给删除按钮绑定事件
+    document.querySelectorAll('.delBtn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const index = parseInt(btn.dataset.index)
+        const id = btn.dataset.id
+        if(confirm('确定要删除这条记录吗？')) {
+            try {
+                await ipcRenderer.invoke('delete_record', { index, id })
+                loadRecords()  // 刷新表格
+            } catch (e) {
+                alert('删除失败: ' + e.message)
+            }
+        }
+      })
+    })
+
+    // 给编辑按钮绑定事件
+    document.querySelectorAll('.editBtn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const index = parseInt(btn.dataset.index)
+        const id = btn.dataset.id
+        let record = records[index]
+        if (id) {
+            record = records.find(r => r.id == id) || record
+        }
+        showEditModal(record, index, id)
+      })
+    })
+  }
+
+  // 搜索功能
+  const searchInput = document.getElementById('search')
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.toLowerCase()
+    const filtered = records.filter(r =>
+            r.time.toLowerCase().includes(query) ||
+            r.location.toLowerCase().includes(query) ||
+            r.species.toLowerCase().includes(query)
+    )
+    displayRecords(filtered)
+  })
+
+  // Edit Modal Logic
+  let currentEditIndex = null
+  let currentEditId = null
+
+  function showEditModal(record, index, id) {
+      currentEditIndex = index
+      currentEditId = id
+      
+      // Create modal if not exists
+      let modal = document.getElementById('edit-modal')
+      if (!modal) {
+          modal = document.createElement('div')
+          modal.id = 'edit-modal'
+          modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;justify-content:center;align-items:center;z-index:1000;'
+          modal.innerHTML = `
+            <div style="background:white;padding:20px;border-radius:8px;width:300px;">
+                <h3>编辑记录</h3>
+                <label>时间: <input id="edit-time" type="datetime-local" style="width:100%;margin-bottom:10px;"></label>
+                <label>地点: <input id="edit-location" style="width:100%;margin-bottom:10px;"></label>
+                <label>数量: <input id="edit-count" type="number" style="width:100%;margin-bottom:10px;"></label>
+                <label>种类: <input id="edit-species" style="width:100%;margin-bottom:10px;"></label>
+                <label>性别: <input id="edit-gender" style="width:100%;margin-bottom:10px;"></label>
+                <div style="text-align:right;">
+                    <button onclick="closeEditModal()">取消</button>
+                    <button onclick="saveEdit()" style="background:#3498db;color:white;">保存</button>
+                </div>
+            </div>
+          `
+          document.body.appendChild(modal)
+      }
+      
+      // Format time for datetime-local input (YYYY-MM-DDTHH:mm)
+      let timeVal = record.time;
+      if (timeVal && timeVal.includes('T') && timeVal.length > 16) {
+          timeVal = timeVal.substring(0, 16);
+      }
+      document.getElementById('edit-time').value = timeVal
+      document.getElementById('edit-location').value = record.location
+      document.getElementById('edit-count').value = record.count
+      document.getElementById('edit-species').value = record.species
+      document.getElementById('edit-gender').value = record.gender
+      
+      modal.style.display = 'flex'
+  }
+
+  function closeEditModal() {
+      document.getElementById('edit-modal').style.display = 'none'
+  }
+
+  async function saveEdit() {
+      if (!currentEditId && records[currentEditIndex] && records[currentEditIndex].id) {
+          currentEditId = records[currentEditIndex].id;
+      }
+
+      const newRecord = {
+          time: document.getElementById('edit-time').value,
+          location: document.getElementById('edit-location').value,
+          count: document.getElementById('edit-count').value, // Keep as string to match add_record
+          species: document.getElementById('edit-species').value,
+          gender: document.getElementById('edit-gender').value
+      }
+      
+      // Remove empty fields to avoid overwriting with null/empty if that's not intended
+      // But here fields are required usually.
+      
+      try {
+          console.log('Updating record:', { id: currentEditId, index: currentEditIndex, record: newRecord });
+          const success = await ipcRenderer.invoke('update_record', { 
+              id: currentEditId, 
+              index: currentEditIndex, 
+              record: newRecord 
+          })
+          
+          if (!success) {
+              throw new Error('更新未生效 (可能记录不存在或ID不匹配)')
+          }
+          
+          closeEditModal()
+          loadRecords()
+      } catch (e) {
+          console.error('Update failed:', e);
+          alert('更新失败: ' + e.message)
+      }
+  }
+
+  // 排序功能
+  document.querySelectorAll('th').forEach(th => {
+    th.addEventListener('click', () => {
+      const field = th.dataset.field
+      if(!field) return;
+      const sorted = [...records].sort((a, b) => {
+        if(a[field] < b[field]) return -1
+        if(a[field] > b[field]) return 1
+        return 0
+      })
+      displayRecords(sorted)
+    })
+  })
+
+  // 记录功能
+  async function add_records(){ await ipcRenderer.invoke('open_add_record_window')}
+
+  loadRecords()
+  window.addEventListener('focus', loadRecords)
+</script>
+</body>
+</html>
+
