@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>观鸟地图</title>
+    <title>喵喵地图</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="../css/common.css">
     <style>
@@ -17,6 +17,22 @@
         }
         
         #map { height: 100%; width: 100%; background-color: #f0f0f0; z-index: 1; }
+
+        .cat-marker {
+            background: transparent;
+            border: 0;
+        }
+        .cat-marker span {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+            font-size: 21px;
+        }
         
         .custom-popup .leaflet-popup-content-wrapper {
             border-radius: 8px;
@@ -51,7 +67,7 @@
             bottom: 30px;
             right: 30px;
             z-index: 1000;
-            background: #3498db;
+             background: #df7d5c;
             color: white;
             border: none;
             border-radius: 50%;
@@ -65,7 +81,7 @@
             justify-content: center;
             transition: background 0.3s;
         }
-        #add-btn:hover { background: #2980b9; }
+        #add-btn:hover { background: #bd6248; }
 
         /* Records List Button */
         #list-btn {
@@ -128,8 +144,8 @@
         }
         .list-search-bar input:focus {
             background: white;
-            border-color: #3498db;
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+            border-color: #df7d5c;
+            box-shadow: 0 0 0 3px rgba(223, 125, 92, 0.12);
             outline: none;
         }
         
@@ -178,13 +194,13 @@
         }
         .filter-toggle input {
             margin-right: 6px;
-            accent-color: #3498db;
+            accent-color: #df7d5c;
             width: 14px;
             height: 14px;
         }
         .filter-toggle.active {
             background: #e7f5ff;
-            border-color: #3498db;
+            border-color: #df7d5c;
             color: #1971c2;
         }
 
@@ -309,7 +325,7 @@
         .btn-group { text-align: right; margin-top: 20px; }
         button { padding: 8px 15px; cursor: pointer; border-radius: 4px; border: none; }
         .btn-cancel { background: #e0e0e0; margin-right: 10px; }
-        .btn-save { background: #3498db; color: white; }
+        .btn-save { background: #df7d5c; color: white; }
 
         /* Detail Modal */
         #detail-modal {
@@ -372,7 +388,7 @@
         
         .gallery-container { display: flex; gap: 5px; overflow-x: auto; padding: 10px 0; }
         .gallery-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 2px solid transparent; }
-        .gallery-thumb:hover { border-color: #3498db; }
+        .gallery-thumb:hover { border-color: #df7d5c; }
         
         .comments-section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; max-height: 150px; overflow-y: auto; }
         .comment-item { margin-bottom: 10px; font-size: 13px; border-bottom: 1px solid #f9f9f9; padding-bottom: 5px; }
@@ -390,13 +406,13 @@
 </head>
 <body>
 
-<button id="list-btn" onclick="showRecordsList()">📋 记录列表</button>
+<button id="list-btn" onclick="showRecordsList()">📋 猫咪记录</button>
 
 <div id="records-list-container">
     <div class="list-header">
         <button onclick="hideRecordsList()" style="background:transparent; color:#333; font-size:24px; padding:0;">←</button>
         <div class="list-search-bar">
-            <input type="text" id="list-search-input" placeholder="搜索记录..." oninput="filterList()">
+            <input type="text" id="list-search-input" placeholder="搜索猫咪记录..." oninput="filterList()">
         </div>
         <div style="width: 24px;"></div>
     </div>
@@ -421,15 +437,15 @@
 </div>
 
 <div id="map"></div>
-<button id="add-btn" onclick="startAddingMode()" title="添加记录">+</button>
+<button id="add-btn" onclick="startAddingMode()" title="添加猫咪记录">+</button>
 
 <!-- Add Record Modal -->
 <div id="modal">
     <div class="modal-content">
-        <h3>添加观鸟记录</h3>
+        <h3>添加猫咪记录</h3>
         <div class="form-group">
-            <label>鸟名/标题</label>
-            <input type="text" id="record-title" placeholder="例如：红嘴鸥">
+            <label>猫咪名称/标题</label>
+            <input type="text" id="record-title" placeholder="例如：小区里的橘猫">
         </div>
         <div class="form-group">
             <label>描述</label>
@@ -438,7 +454,7 @@
         <div class="form-group">
             <label>图片 (支持多选)</label>
             <div style="display:flex; gap:5px; flex-direction: column;">
-                <button type="button" onclick="selectImage()" style="width:100%; background:#eee; color:#333;">选择图片...</button>
+                    <button type="button" onclick="selectImage()" style="width:100%; background:#eee; color:#333;">选择猫咪图片...</button>
                 <div id="image-preview" style="display:flex; gap:5px; overflow-x:auto; height:60px; align-items:center; border:1px dashed #ddd; padding:5px;">
                     <span style="color:#999;font-size:12px;">未选择图片</span>
                 </div>
@@ -475,7 +491,7 @@
                 <div id="comments-list"></div>
                 <div style="display:flex; margin-top:10px; gap:5px;">
                     <input type="text" id="comment-input" placeholder="写下你的评论..." style="flex:1; font-size:13px;">
-                    <button onclick="addComment()" style="padding:5px 10px; font-size:13px; background:#3498db; color:white;">发送</button>
+                    <button onclick="addComment()" style="padding:5px 10px; font-size:13px; background:#df7d5c; color:white;">发送</button>
                 </div>
             </div>
 
@@ -609,23 +625,25 @@
     let allRecords = [];
     let markers = [];
     let currentUser = null;
+    let cloudEnabled = false;
     let selectedImagePaths = [];
 
     // Icons
-    const myIcon = L.icon({
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+    const makeCatIcon = (background) => L.divIcon({
+        className: 'cat-marker',
+        html: `<span style="background:${background};">🐱</span>`,
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
+        popupAnchor: [0, -20]
     });
-    
-    const otherIcon = L.icon({
-        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-    });
+    const myIcon = makeCatIcon('#df7d5c');
+    const otherIcon = makeCatIcon('#8f7166');
 
     async function init() {
         try {
+            cloudEnabled = await ipcRenderer.invoke('is-cloud-enabled');
+            document.querySelector('.interaction-bar').style.display = cloudEnabled ? 'flex' : 'none';
+            document.querySelector('.comments-section').style.display = cloudEnabled ? 'block' : 'none';
             const userResult = await ipcRenderer.invoke('get_current_user_profile');
             currentUser = userResult;
             loadMapRecords();
@@ -673,9 +691,9 @@
                         <div class="popup-desc">${record.desc || '无描述'}</div>
                         <div class="user-tag" style="font-size:12px;color:#666;margin-top:5px;display:flex;align-items:center;">
                             ${record.profiles?.avatar_url ? `<img src="${record.profiles.avatar_url}" style="width:20px;height:20px;border-radius:50%;margin-right:5px;">` : ''}
-                            <span>${record.profiles?.username || '未知用户'}</span>
+                             <span>${record.profiles?.username || '本地记录'}</span>
                         </div>
-                        <div style="text-align:center;margin-top:5px;color:#3498db;font-size:12px;">点击查看详情</div>
+                        <div style="text-align:center;margin-top:5px;color:#df7d5c;font-size:12px;">点击查看详情</div>
                     </div>
                 </div>
             `;
@@ -727,7 +745,7 @@
                     <div class="record-card-title">${record.title}</div>
                     <div class="record-card-desc">${record.desc || '暂无描述'}</div>
                     <div class="record-card-meta">
-                        <span>👤 ${record.profiles?.username || '未知用户'}</span>
+                         <span>👤 ${record.profiles?.username || '本地记录'}</span>
                         ${dateStr ? `<span>📅 ${dateStr}</span>` : ''}
                     </div>
                 </div>

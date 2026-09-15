@@ -53,9 +53,9 @@ CREATE POLICY "Users can delete their own map_records" ON map_records
 -- Storage 存储桶策略配置 (解决图片上传 403 错误)
 -- ==========================================
 
--- 确保 'birds' 存储桶存在 (如果未创建，请在 Storage 面板创建，并设为 Public)
+-- 确保 'cats' 存储桶存在 (如果未创建，请在 Storage 面板创建，并设为 Public)
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('birds', 'birds', true)
+VALUES ('cats', 'cats', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 删除旧存储策略
@@ -64,29 +64,29 @@ DROP POLICY IF EXISTS "Allow public viewing" ON storage.objects;
 DROP POLICY IF EXISTS "Allow individual update" ON storage.objects;
 DROP POLICY IF EXISTS "Allow individual delete" ON storage.objects;
 
--- 允许认证用户上传图片到 birds 桶
+-- 允许认证用户上传图片到 cats 桶
 CREATE POLICY "Allow authenticated uploads"
 ON storage.objects
 FOR INSERT
 TO authenticated
-WITH CHECK ( bucket_id = 'birds' );
+WITH CHECK ( bucket_id = 'cats' );
 
--- 允许任何人查看 birds 桶的图片 (因为我们需要 getPublicUrl)
+-- 允许任何人查看 cats 桶的图片 (因为我们需要 getPublicUrl)
 CREATE POLICY "Allow public viewing"
 ON storage.objects
 FOR SELECT
 TO public
-USING ( bucket_id = 'birds' );
+USING ( bucket_id = 'cats' );
 
 -- 允许用户更新/删除自己的图片 (可选，基于 owner)
 CREATE POLICY "Allow individual update"
 ON storage.objects
 FOR UPDATE
 TO authenticated
-USING ( bucket_id = 'birds' AND auth.uid() = owner );
+    USING ( bucket_id = 'cats' AND auth.uid() = owner );
 
 CREATE POLICY "Allow individual delete"
 ON storage.objects
 FOR DELETE
 TO authenticated
-USING ( bucket_id = 'birds' AND auth.uid() = owner );
+    USING ( bucket_id = 'cats' AND auth.uid() = owner );

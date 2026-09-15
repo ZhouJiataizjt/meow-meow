@@ -9,9 +9,9 @@
     <div class="container">
         <button class="back-btn" onclick="goBack()" title="返回">⬅</button>
         
-        <h3>🌍 地区检索</h3>
+        <h3>🌍 地区猫咪检索</h3>
         <div class="form-group">
-            <input id="area_input" type="text" placeholder="请输入要检索的地区（如：北京奥林匹克森林公园）">
+            <input id="area_input" type="text" placeholder="请输入要检索的地区（如：小区、校园或公园）">
         </div>
         <div class="text-center">
             <button onclick="area_searcher()">🔍 开始搜索</button>
@@ -45,7 +45,7 @@
          }
 
          async function goBack() {
-             await ipcRenderer.invoke('search_bird_newpage')
+             await ipcRenderer.invoke('search_cat_newpage')
          }
     </script>
 </body>

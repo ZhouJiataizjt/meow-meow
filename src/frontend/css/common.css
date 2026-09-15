@@ -1,9 +1,9 @@
-/* Common Styles for Birdwatching Handbook */
+/* Common Styles for Meow-Meow Map */
 :root {
-    --primary-color: #2c3e50;
-    --accent-color: #3498db;
-    --bg-color: #ecf0f1;
-    --text-color: #333;
+    --primary-color: #5b4038;
+    --accent-color: #df7d5c;
+    --bg-color: #fff7f0;
+    --text-color: #3f3531;
     --card-bg: #ffffff;
     --shadow: 0 4px 6px rgba(0,0,0,0.1);
     --hover-shadow: 0 8px 15px rgba(0,0,0,0.15);
@@ -51,7 +51,7 @@ button {
 }
 
 button:hover {
-    background-color: #2980b9;
+        background-color: #bd6248;
     transform: translateY(-2px);
 }
 

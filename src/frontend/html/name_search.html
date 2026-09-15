@@ -9,9 +9,9 @@
     <div class="container">
         <button class="back-btn" onclick="goBack()" title="返回">⬅</button>
         
-        <h3>🐦 鸟名检索</h3>
+        <h3>🐱 猫咪名称检索</h3>
         <div class="form-group">
-            <input id="name_input" type="text" placeholder="请输入鸟类的名称（如：麻雀）">
+            <input id="name_input" type="text" placeholder="请输入猫咪的名称或品种（如：橘猫）">
         </div>
         <div class="text-center">
             <button onclick="name_searcher()">🔍 开始搜索</button>
@@ -29,7 +29,7 @@
               const resultElement = document.getElementById("name_result")
 
               if (!name) {
-                  resultElement.innerText = "请输入鸟的名称"
+                  resultElement.innerText = "请输入猫咪的名称或品种"
                   return
               }
 
@@ -45,7 +45,7 @@
           }
 
           async function goBack() {
-             await ipcRenderer.invoke('search_bird_newpage')
+             await ipcRenderer.invoke('search_cat_newpage')
          }
     </script>
 </body>

@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>今日推荐</title>
+    <title>今日寻猫</title>
     <link rel="stylesheet" href="../css/common.css">
 </head>
 <body>
     <div class="container">
         
-        <h2>📅 今日打鸟推荐</h2>
+        <h2>🐱 今日寻猫推荐</h2>
         <div class="form-group">
             <input id="area_input" type="text" placeholder="请输入你所在的地区（如：杭州西湖）">
         </div>
@@ -29,7 +29,7 @@
                 resultElement.innerText = "请输入你所在的地区"
                 return
             }
-            resultElement.innerText = "正在为您生成推荐，请稍候..."
+                resultElement.innerText = "正在为您生成今日寻猫推荐，请稍候..."
             try {
                 const result = await ipcRenderer.invoke('todays_recommend', area)
                 resultElement.innerText = result

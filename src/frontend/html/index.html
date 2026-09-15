@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>打鸟图鉴</title>
+  <title>喵喵地图</title>
   <link rel="stylesheet" href="../css/common.css">
   <style>
     header {
@@ -154,7 +154,7 @@
         font-size: 16px;
     }
     .btn-primary:hover {
-        background-color: #2980b9;
+         background-color: #bd6248;
     }
     .btn-secondary {
         background-color: #ddd;
@@ -186,35 +186,31 @@
 <body>
   <div class="user-panel">
       <img id="user-avatar-small" class="user-avatar-small" src="../assets/default-avatar.png" alt="Avatar">
-      <span id="user-email">未登录</span>
+      <span id="user-email">本地模式</span>
       <button id="login-btn" onclick="openLogin()">登录/注册</button>
       <button id="profile-btn" onclick="openProfileSettings()" style="display: none;">设置</button>
       <button id="logout-btn" onclick="handleLogout()" style="display: none;">退出</button>
   </div>
   <header>
-    <h1>打鸟图鉴</h1>
+    <h1>🐾 喵喵地图</h1>
   </header>
 
   <div id="main-container">
-    <div class="card" onclick="bird_classify()">
-      <div class="card-icon">📷</div>
-      <div class="card-title">智能认鸟</div>
-    </div>
-    <div class="card" onclick="search_bird()">
+    <div class="card" onclick="search_cat()">
       <div class="card-icon">🔍</div>
-      <div class="card-title">图鉴查询</div>
+      <div class="card-title">猫咪图鉴</div>
     </div>
     <div class="card" onclick="todays_recommend()">
       <div class="card-icon">📅</div>
-      <div class="card-title">今日推荐</div>
+      <div class="card-title">今日寻猫</div>
     </div>
     <div class="card" onclick="my_record()">
       <div class="card-icon">📝</div>
-      <div class="card-title">我的记录</div>
+      <div class="card-title">我的猫咪记录</div>
     </div>
     <div class="card" onclick="open_map()">
       <div class="card-icon">🗺️</div>
-      <div class="card-title">观鸟地图</div>
+      <div class="card-title">喵喵地图</div>
     </div>
     <div class="card" onclick="showAbout()">
       <div class="card-icon">ℹ️</div>
@@ -249,10 +245,19 @@
     let currentAvatarPath = null;
 
     function showAbout() {
-        alert('打鸟图鉴 v2.0\n\n这是一个专为观鸟爱好者设计的应用，提供智能识别、记录管理和观鸟地图等功能。\n\n支持Fresh环保协会谢谢喵ψ(｀∇´)ψ\n\n开发者：T2ek1ng0, 江浚源');
+        alert('喵喵地图 v2.0\n\n这是一个记录猫咪出没地点、整理猫咪信息和分享发现的应用。\n\n支持 Fresh 环保协会，谢谢喵 ψ(｀∇´)ψ\n\n开发者：T2ek1ng0, 江浚源');
     }
 
     async function checkUser() {
+        const cloudEnabled = await ipcRenderer.invoke('is-cloud-enabled');
+        if (!cloudEnabled) {
+            document.getElementById('user-email').innerText = '本地模式';
+            document.getElementById('login-btn').style.display = 'none';
+            document.getElementById('logout-btn').style.display = 'none';
+            document.getElementById('profile-btn').style.display = 'none';
+            document.getElementById('user-avatar-small').style.display = 'none';
+            return;
+        }
         const user = await ipcRenderer.invoke('get-current-user');
         if (user) {
             // Fetch profile
@@ -278,7 +283,7 @@
             document.getElementById('logout-btn').style.display = 'inline-block';
             document.getElementById('profile-btn').style.display = 'inline-block';
         } else {
-            document.getElementById('user-email').innerText = '未登录';
+            document.getElementById('user-email').innerText = '本地模式';
             document.getElementById('user-avatar-small').style.display = 'none';
             document.getElementById('login-btn').style.display = 'inline-block';
             document.getElementById('logout-btn').style.display = 'none';
@@ -359,8 +364,7 @@
     checkUser();
     window.addEventListener('focus', checkUser);
   </script>
-<script src="../js/bird_classify.js"></script>
-<script src="../js/search_bird.js"></script>
+<script src="../js/search_cat.js"></script>
   <script>
     async function todays_recommend(){ await ipcRenderer.invoke('todays_newpage') }
     async function my_record(){ await ipcRenderer.invoke('open_records')}

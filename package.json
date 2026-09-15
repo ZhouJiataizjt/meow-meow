@@ -1,7 +1,7 @@
 {
-  "name": "birdwatching_handbook",
+  "name": "meow-meow-map",
   "version": "2.0.0",
-  "description": "A handbook for birdwatching",
+  "description": "A cat discovery map for recording and sharing cat sightings",
   "main": "src/frontend/js/main.js",
   "scripts": {
     "start": "electron .",
@@ -13,7 +13,7 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "electron": "^39.0.0",
+    "electron": "^39.8.10",
     "electron-builder": "^26.0.12",
     "nodemon": "^3.1.10"
   },
@@ -24,8 +24,8 @@
     "node-fetch": "^3.3.2"
   },
   "build": {
-    "appId": "org.gaojiyingwen.birdwatchinghandbook",
-    "productName": "birdwatching_handbook",
+    "appId": "org.gaojiyingwen.meowmeowmap",
+    "productName": "meow-meow-map",
     "copyright": "Copyright © Powered by t2zk1ng0",
     "directories": {
       "output": "build_output"
@@ -38,20 +38,28 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "warningsAsErrors": false,
-      "artifactName": "birdwatching_handbook_Setup.exe",
+      "artifactName": "meow-meow-map_Setup.exe",
       "installerHeaderIcon": "favicon.ico"
     },
     "buildDependenciesFromSource": false,
     "forceCodeSigning": false,
     "extraResources": [
       {
-        "from": "dist/model_predict",
-        "to": "model_predict"
-      },
-      {
         "from": "data/records.json",
         "to": "."
       }
     ]
-  }
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZhouJiataizjt/meow-meow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ZhouJiataizjt/meow-meow/issues"
+  },
+  "homepage": "https://github.com/ZhouJiataizjt/meow-meow#readme"
 }

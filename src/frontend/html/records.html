@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>我的观鸟记录</title>
+  <title>我的猫咪记录</title>
   <link rel="stylesheet" href="../css/common.css">
   <style>
     table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
@@ -24,7 +24,7 @@
     .delBtn:hover { background-color: #c0392b; }
 
     .editBtn {
-        background-color: #3498db;
+         background-color: #df7d5c;
         padding: 5px 10px;
         font-size: 12px;
     }
@@ -33,21 +33,21 @@
 <body>
     <div class="container" style="max-width: 100%;">
         
-        <h1>📝 我的观鸟记录表</h1>
+        <h1>🐾 我的猫咪记录表</h1>
 
         <div class="toolbar">
-            <input id="search" class="search-box" placeholder="🔍 搜索记录...">
+            <input id="search" class="search-box" placeholder="🔍 搜索猫咪记录...">
             <button onclick="add_records()">➕ 添加记录</button>
         </div>
 
         <table>
           <thead>
           <tr>
-            <th data-field="time">观测时间 ↕</th>
+            <th data-field="time">发现时间 ↕</th>
             <th data-field="location">地点 ↕</th>
             <th data-field="count">数量 ↕</th>
-            <th data-field="species">种类 ↕</th>
-            <th data-field="gender">性别 ↕</th>
+            <th data-field="species">猫咪/品种 ↕</th>
+            <th data-field="gender">毛色/特征 ↕</th>
             <th>操作</th>
           </tr>
           </thead>
@@ -146,11 +146,11 @@
                 <label>时间: <input id="edit-time" type="datetime-local" style="width:100%;margin-bottom:10px;"></label>
                 <label>地点: <input id="edit-location" style="width:100%;margin-bottom:10px;"></label>
                 <label>数量: <input id="edit-count" type="number" style="width:100%;margin-bottom:10px;"></label>
-                <label>种类: <input id="edit-species" style="width:100%;margin-bottom:10px;"></label>
-                <label>性别: <input id="edit-gender" style="width:100%;margin-bottom:10px;"></label>
+                 <label>猫咪/品种: <input id="edit-species" style="width:100%;margin-bottom:10px;"></label>
+                 <label>毛色/特征: <input id="edit-gender" style="width:100%;margin-bottom:10px;"></label>
                 <div style="text-align:right;">
                     <button onclick="closeEditModal()">取消</button>
-                    <button onclick="saveEdit()" style="background:#3498db;color:white;">保存</button>
+                    <button onclick="saveEdit()" style="background:#df7d5c;color:white;">保存</button>
                 </div>
             </div>
           `
@@ -233,4 +233,3 @@
 </script>
 </body>
 </html>
-
