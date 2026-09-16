@@ -1,20 +1,20 @@
 /* Common Styles for Meow-Meow Map */
 :root {
-    --primary-color: #5b4038;
-    --accent-color: #df7d5c;
-    --bg-color: #fff7f0;
-    --text-color: #3f3531;
+    --primary-color: #49352d;
+    --accent-color: #d86f4e;
+    --bg-color: #f6f3ef;
+    --text-color: #332923;
     --card-bg: #ffffff;
-    --shadow: 0 4px 6px rgba(0,0,0,0.1);
-    --hover-shadow: 0 8px 15px rgba(0,0,0,0.15);
+    --shadow: 0 12px 30px rgba(78, 52, 39, 0.08);
+    --hover-shadow: 0 16px 34px rgba(78, 52, 39, 0.13);
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
-    padding: 20px;
+    padding: 28px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -24,16 +24,17 @@ body {
 
 h1, h2, h3 {
     color: var(--primary-color);
-    margin-bottom: 20px;
+    margin: 0 0 20px;
     text-align: center;
 }
 
 .container {
     width: 100%;
-    max-width: 800px;
+    max-width: 900px;
     background: var(--card-bg);
-    padding: 30px;
-    border-radius: 10px;
+    padding: 32px;
+    border: 1px solid #eee3da;
+    border-radius: 16px;
     box-shadow: var(--shadow);
     position: relative;
 }
@@ -43,10 +44,12 @@ button {
     background-color: var(--accent-color);
     color: white;
     border: none;
-    padding: 10px 20px;
-    border-radius: 5px;
+    min-height: 40px;
+    padding: 0 17px;
+    border-radius: 10px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 14px;
+    font-weight: 600;
     transition: background 0.3s, transform 0.2s;
 }
 
@@ -70,16 +73,18 @@ button.secondary:hover {
 /* Inputs */
 input[type="text"], textarea, select {
     width: 100%;
-    padding: 10px;
+    min-height: 42px;
+    padding: 10px 12px;
     margin-bottom: 15px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
+    border: 1px solid #e5dcd4;
+    border-radius: 10px;
     box-sizing: border-box;
     font-size: 14px;
 }
 
 input[type="text"]:focus, textarea:focus, select:focus {
     border-color: var(--accent-color);
+    box-shadow: 0 0 0 4px rgba(216, 111, 78, .13);
     outline: none;
 }
 
@@ -106,7 +111,7 @@ input[type="text"]:focus, textarea:focus, select:focus {
 .grid-container {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
+    gap: 16px;
 }
 
 /* Utility */

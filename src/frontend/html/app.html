@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>喵喵地图</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="app-sidebar" aria-label="主导航">
+            <div class="brand">
+                <div class="brand-mark" aria-hidden="true">🐾</div>
+                <div class="brand-copy">
+                    <div class="brand-name">喵喵地图</div>
+                    <div class="brand-subtitle">记录每一次偶遇</div>
+                </div>
+            </div>
+
+            <div class="nav-section-label">探索与记录</div>
+            <nav class="app-nav">
+                <button class="nav-item active" data-route="map" type="button">
+                    <span class="nav-icon" aria-hidden="true">🗺️</span><span class="nav-label">发现地图</span>
+                </button>
+                <button class="nav-item" data-route="records" type="button">
+                    <span class="nav-icon" aria-hidden="true">📝</span><span class="nav-label">我的观察记录</span>
+                </button>
+                <button class="nav-item" data-route="guide" type="button">
+                    <span class="nav-icon" aria-hidden="true">🐱</span><span class="nav-label">猫咪图鉴</span>
+                </button>
+                <button class="nav-item" data-route="recommend" type="button">
+                    <span class="nav-icon" aria-hidden="true">✨</span><span class="nav-label">今日寻猫</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-spacer"></div>
+
+            <div class="account-card">
+                <div class="account-avatar" id="account-avatar" aria-hidden="true">🐾</div>
+                <div class="account-copy">
+                    <div class="account-name" id="account-name">本地模式</div>
+                    <div class="account-status" id="account-status">记录保存在本机</div>
+                </div>
+                <button class="account-action" id="account-action" type="button">登录</button>
+            </div>
+        </aside>
+
+        <main class="app-main">
+            <header class="app-topbar">
+                <div class="page-heading">
+                    <h1 class="page-title" id="page-title">发现地图</h1>
+                    <p class="page-description" id="page-description">看看附近有哪些猫咪，也记录你的新发现</p>
+                </div>
+                <button class="primary-action" id="primary-action" type="button">＋ 新增观察</button>
+            </header>
+            <section class="workspace" aria-label="应用内容">
+                <iframe id="workspace-frame" title="应用内容" src="map.html"></iframe>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron')
+
+        const routes = {
+            map: {
+                title: '发现地图',
+                description: '看看附近有哪些猫咪，也记录你的新发现',
+                src: 'map.html',
+                action: 'add-map'
+            },
+            records: {
+                title: '我的观察记录',
+                description: '整理你遇见过的猫咪与地点',
+                src: 'records.html',
+                action: 'add-record'
+            },
+            guide: {
+                title: '猫咪图鉴',
+                description: '按地区或名称，了解更多猫咪信息',
+                src: 'cat_select_page.html',
+                action: null
+            },
+            'guide-area': {
+                title: '猫咪图鉴 · 地区检索',
+                description: '输入小区、校园或公园，开始检索',
+                src: 'area_search.html',
+                action: null
+            },
+            'guide-name': {
+                title: '猫咪图鉴 · 名称检索',
+                description: '输入猫咪名称或品种，开始检索',
+                src: 'name_search.html',
+                action: null
+            },
+            recommend: {
+                title: '今日寻猫',
+                description: '根据所在地区生成今日观察建议',
+                src: 'recommend.html',
+                action: null
+            }
+        }
+
+        const frame = document.getElementById('workspace-frame')
+        const title = document.getElementById('page-title')
+        const description = document.getElementById('page-description')
+        const primaryAction = document.getElementById('primary-action')
+
+        let activeRoute = 'map'
+        let accountActionMode = 'login'
+
+        function baseRoute(route) {
+            return route.startsWith('guide-') ? 'guide' : route
+        }
+
+        function navigate(route) {
+            const config = routes[route] || routes.map
+            activeRoute = route
+            title.textContent = config.title
+            description.textContent = config.description
+            frame.src = config.src
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.route === baseRoute(route))
+            })
+            primaryAction.style.display = config.action ? 'inline-flex' : 'none'
+            if (config.action === 'add-map') primaryAction.innerHTML = '＋ 新增观察'
+            if (config.action === 'add-record') primaryAction.innerHTML = '＋ 添加记录'
+        }
+
+        window.appNavigate = navigate
+        window.addEventListener('message', event => {
+            if (event.data && event.data.type === 'navigate') navigate(event.data.route)
+        })
+
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => navigate(item.dataset.route))
+        })
+
+        primaryAction.addEventListener('click', async () => {
+            if (activeRoute === 'records') await ipcRenderer.invoke('open_add_record_window')
+            else if (activeRoute === 'map') frame.contentWindow?.postMessage({ type: 'start-map-add' }, '*')
+        })
+
+        document.getElementById('account-action').addEventListener('click', async () => {
+            if (accountActionMode === 'logout') {
+                await ipcRenderer.invoke('auth-logout')
+                refreshAccount()
+            } else {
+                await ipcRenderer.invoke('open_login_window')
+            }
+        })
+
+        async function refreshAccount() {
+            const cloudEnabled = await ipcRenderer.invoke('is-cloud-enabled')
+            const action = document.getElementById('account-action')
+            if (!cloudEnabled) {
+                document.getElementById('account-name').textContent = '本地模式'
+                document.getElementById('account-status').textContent = '云端登录尚未配置'
+                document.getElementById('account-avatar').innerHTML = '🐾'
+                // Keep the entry visible even in local mode. This makes the
+                // account capability discoverable; the login window will
+                // explain that Supabase credentials still need to be set.
+                action.textContent = '登录/注册'
+                action.style.display = 'inline'
+                accountActionMode = 'login'
+                return
+            }
+
+            const current = await ipcRenderer.invoke('get_current_user')
+            if (current) {
+                let displayName = current.email || '已登录用户'
+                let avatar = null
+                try {
+                    const profileResult = await ipcRenderer.invoke('get_current_user_profile')
+                    const profile = profileResult && profileResult.profile
+                    if (profile?.username) displayName = profile.username
+                    avatar = profile?.avatar_url || null
+                } catch (error) { console.warn('读取用户资料失败', error) }
+                document.getElementById('account-name').textContent = displayName
+                document.getElementById('account-status').textContent = '云端同步已开启'
+                action.textContent = '退出'
+                action.style.display = 'inline'
+                accountActionMode = 'logout'
+                if (avatar) document.getElementById('account-avatar').innerHTML = `<img src="${avatar}" alt="">`
+            } else {
+                document.getElementById('account-name').textContent = '未登录'
+                document.getElementById('account-status').textContent = '登录以同步记录'
+                document.getElementById('account-avatar').innerHTML = '🐾'
+                action.textContent = '登录'
+                action.style.display = 'inline'
+                accountActionMode = 'login'
+            }
+        }
+
+        refreshAccount()
+        window.addEventListener('focus', refreshAccount)
+    </script>
+</body>
+</html>

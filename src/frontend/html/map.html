@@ -917,6 +917,12 @@
         document.getElementById('map').style.cursor = 'crosshair';
     }
 
+    // The workspace shell owns the primary action button. Keep the map view
+    // self-contained by accepting that action through the frame boundary.
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'start-map-add') startAddingMode();
+    });
+
     map.on('click', function(e) {
         if (!isAdding) return;
         currentLatLng = e.latlng;

@@ -72,14 +72,19 @@ function createWindow(){
         icon: path.join(__dirname, '../assets/favicon.ico'),
         webPreferences: {
             nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegrationInSubFrames: true,
+            contextIsolation: false,
+            // Existing map records can contain local image paths. The app already
+            // runs with Node integration, so keep the same behavior for views
+            // rendered inside the workspace frame.
+            webSecurity: false
         }
     })
     let menutemp = []
     let menu = Menu.buildFromTemplate(menutemp)
     Menu.setApplicationMenu(menu)
     //mainWindow.webContents.openDevTools()
-    mainWindow.loadFile(path.join(__dirname, '../html/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../html/app.html'))
     mainWindow.on('ready-to-show', ()=> mainWindow.show())
     mainWindow.on('close', ()=> mainWindow = null)
 }
@@ -325,12 +330,13 @@ ipcMain.handle('add_record', async (event, record) => {
 })
 
 let addRecordWin
-ipcMain.handle('open_add_record_window', async () => {
+ipcMain.handle('open_add_record_window', async (event) => {
     if (addRecordWin) return
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) || mainWindow
     addRecordWin = new BrowserWindow({
         width: 400,
         height: 350,
-        parent: recordsWin,
+        parent: parentWindow,
         modal: true,
         resizable: true,
         show: false,

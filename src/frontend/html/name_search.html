@@ -9,7 +9,6 @@
     <div class="container">
         <button class="back-btn" onclick="goBack()" title="返回">⬅</button>
         
-        <h3>🐱 猫咪名称检索</h3>
         <div class="form-group">
             <input id="name_input" type="text" placeholder="请输入猫咪的名称或品种（如：橘猫）">
         </div>
@@ -45,6 +44,10 @@
           }
 
           async function goBack() {
+             if (window.parent && window.parent !== window && window.parent.appNavigate) {
+                 window.parent.appNavigate('guide')
+                 return
+             }
              await ipcRenderer.invoke('search_cat_newpage')
          }
     </script>
