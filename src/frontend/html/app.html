@@ -25,6 +25,12 @@
                 <button class="nav-item" data-route="records" type="button">
                     <span class="nav-icon" aria-hidden="true">📝</span><span class="nav-label">我的观察记录</span>
                 </button>
+                <button class="nav-item" data-route="cats" type="button">
+                    <span class="nav-icon" aria-hidden="true">🐈</span><span class="nav-label">猫咪档案</span>
+                </button>
+                <button class="nav-item" data-route="stats" type="button">
+                    <span class="nav-icon" aria-hidden="true">📊</span><span class="nav-label">统计面板</span>
+                </button>
                 <button class="nav-item" data-route="guide" type="button">
                     <span class="nav-icon" aria-hidden="true">🐱</span><span class="nav-label">猫咪图鉴</span>
                 </button>
@@ -34,6 +40,14 @@
             </nav>
 
             <div class="sidebar-spacer"></div>
+
+            <div class="data-manage">
+                <div class="nav-section-label">数据管理</div>
+                <div class="data-actions">
+                    <button class="data-btn" id="export-data-btn" type="button">⬇️ 导出备份</button>
+                    <button class="data-btn" id="import-data-btn" type="button">⬆️ 导入备份</button>
+                </div>
+            </div>
 
             <div class="account-card">
                 <div class="account-avatar" id="account-avatar" aria-hidden="true">🐾</div>
@@ -98,6 +112,18 @@
                 description: '根据所在地区生成今日观察建议',
                 src: 'recommend.html',
                 action: null
+            },
+            cats: {
+                title: '猫咪档案',
+                description: '给常驻猫咪建立档案，串起每一次相遇',
+                src: 'cats.html',
+                action: null
+            },
+            stats: {
+                title: '统计面板',
+                description: '你和猫咪们的故事，都用数据说话',
+                src: 'stats.html',
+                action: null
             }
         }
 
@@ -139,6 +165,17 @@
         primaryAction.addEventListener('click', async () => {
             if (activeRoute === 'records') await ipcRenderer.invoke('open_add_record_window')
             else if (activeRoute === 'map') frame.contentWindow?.postMessage({ type: 'start-map-add' }, '*')
+        })
+
+        // 数据导出 / 导入
+        document.getElementById('export-data-btn').addEventListener('click', async () => {
+            const result = await ipcRenderer.invoke('export_data')
+            alert(result?.message || '导出完成')
+        })
+        document.getElementById('import-data-btn').addEventListener('click', async () => {
+            const result = await ipcRenderer.invoke('import_data')
+            alert(result?.message || '导入完成')
+            if (result?.ok) frame.contentWindow?.location.reload() // 导入成功后刷新当前页面数据
         })
 
         document.getElementById('account-action').addEventListener('click', async () => {

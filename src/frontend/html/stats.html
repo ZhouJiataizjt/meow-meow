@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>统计面板</title>
+    <link rel="stylesheet" href="../css/common.css">
+    <style>
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid #eee3da;
+            border-radius: 14px;
+            padding: 18px;
+            text-align: center;
+        }
+        .stat-value { font-size: 30px; font-weight: 800; color: var(--accent-color); }
+        .stat-label { margin-top: 4px; color: #8c7b71; font-size: 12px; }
+
+        .stats-section {
+            background: var(--card-bg);
+            border: 1px solid #eee3da;
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 18px;
+        }
+        .stats-section h3 { text-align: left; margin-bottom: 14px; font-size: 15px; }
+
+        .bar-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 9px;
+            font-size: 13px;
+        }
+        .bar-name { flex: 0 0 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4a3b33; }
+        .bar-track { flex: 1; background: #f3ece6; border-radius: 8px; height: 18px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 8px; background: linear-gradient(90deg, #f0a58a, #d86f4e); min-width: 4px; }
+        .bar-count { flex: 0 0 34px; text-align: right; color: #8c7b71; }
+
+        .month-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 14px;
+            height: 140px;
+            padding-top: 10px;
+        }
+        .month-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+        .month-bar {
+            width: 70%;
+            max-width: 46px;
+            background: linear-gradient(180deg, #f0a58a, #d86f4e);
+            border-radius: 8px 8px 3px 3px;
+            min-height: 3px;
+        }
+        .month-label { font-size: 11px; color: #8c7b71; white-space: nowrap; }
+        .month-count { font-size: 12px; font-weight: 700; color: var(--primary-color); }
+
+        .empty-tip { color: #8c7b71; font-size: 13px; text-align: center; padding: 24px 0; }
+    </style>
+</head>
+<body>
+    <div class="container" style="max-width: 100%;">
+        <h2>📊 统计面板</h2>
+        <div id="stats-grid" class="stats-grid"></div>
+
+        <div class="stats-section">
+            <h3>最近 6 个月记录趋势</h3>
+            <div id="month-chart" class="month-chart"></div>
+        </div>
+
+        <div class="stats-section">
+            <h3>最常出没地点 Top 5</h3>
+            <div id="top-locations"></div>
+        </div>
+
+        <div class="stats-section">
+            <h3>品种/花色分布 Top 5</h3>
+            <div id="top-species"></div>
+        </div>
+    </div>
+
+<script>
+    const { ipcRenderer } = require('electron')
+    const { escapeHtml, computeStats } = require('../../backend/utils')
+
+    function statCard(value, label) {
+        return `<div class="stat-card"><div class="stat-value">${escapeHtml(value)}</div><div class="stat-label">${escapeHtml(label)}</div></div>`
+    }
+
+    function renderBars(containerId, items, maxCount) {
+        const container = document.getElementById(containerId)
+        if (!items || items.length === 0) {
+            container.innerHTML = '<div class="empty-tip">还没有足够的记录，快去记录一次偶遇吧。</div>'
+            return
+        }
+        const max = maxCount > 0 ? maxCount : 1
+        container.innerHTML = items.map(item => `
+            <div class="bar-row">
+                <div class="bar-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, Math.round(item.count / max * 100))}%;"></div></div>
+                <div class="bar-count">${item.count}</div>
+            </div>
+        `).join('')
+    }
+
+    async function loadStats() {
+        const [records, mapRecords, cats] = await Promise.all([
+            ipcRenderer.invoke('get_records'),
+            ipcRenderer.invoke('get_map_records'),
+            ipcRenderer.invoke('get_cats')
+        ])
+        const stats = computeStats(records || [], mapRecords || [], cats || [])
+
+        document.getElementById('stats-grid').innerHTML =
+            statCard(stats.monthCatsSeen, `本月遇到猫咪（${stats.monthLabel}）`) +
+            statCard(stats.recordCount, '累计记录条数') +
+            statCard(stats.mapCount, '地图打卡') +
+            statCard(stats.catProfileCount, '猫咪档案') +
+            statCard(stats.totalCatsSeen, '历史累计遇见只数')
+
+        const maxMonth = Math.max(...stats.monthly.map(m => m.count), 1)
+        document.getElementById('month-chart').innerHTML = stats.monthly.map(m => `
+            <div class="month-col">
+                <div class="month-count">${m.count > 0 ? m.count : ''}</div>
+                <div class="month-bar" style="height:${Math.max(3, Math.round(m.count / maxMonth * 100))}%;"></div>
+                <div class="month-label">${escapeHtml(m.month)}</div>
+            </div>
+        `).join('')
+
+        renderBars('top-locations', stats.topLocations, stats.topLocations[0]?.count)
+        renderBars('top-species', stats.topSpecies, stats.topSpecies[0]?.count)
+    }
+
+    loadStats()
+    window.addEventListener('focus', loadStats)
+</script>
+</body>
+</html>
