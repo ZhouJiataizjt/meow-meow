@@ -121,6 +121,55 @@
             color: white;
         }
 
+        /* Campus areas toggle button */
+        #areas-btn {
+            position: absolute;
+            top: 108px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            cursor: pointer;
+            font-weight: bold;
+            color: #2c3e50;
+            border: none;
+            font-size: 13px;
+        }
+        #areas-btn.active {
+            background: #8f7166;
+            color: white;
+        }
+
+        /* 校园边界永久标签 */
+        .campus-label {
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid #e3d5cb;
+            color: #6f5e54;
+            font-weight: 600;
+            font-size: 11px;
+            box-shadow: none;
+            padding: 2px 8px;
+        }
+        .campus-label::before { display: none; }
+
+        /* 弹窗里的位置识别预览 */
+        .area-preview {
+            font-size: 12px;
+            color: #6f5e54;
+            background: #f6f3ef;
+            border: 1px dashed #e3d5cb;
+            border-radius: 6px;
+            padding: 6px 10px;
+            margin-bottom: 12px;
+        }
+        .popup-area {
+            font-size: 11px;
+            color: #8f7166;
+            margin-top: 4px;
+        }
+
         /* Offline notice overlay */
         #offline-notice {
             display: none;
@@ -457,6 +506,7 @@
 
 <button id="list-btn" onclick="showRecordsList()">📋 猫咪记录</button>
 <button id="heat-btn" onclick="toggleHeatmap()" title="切换热力图">🔥 热力图</button>
+<button id="areas-btn" class="active" onclick="toggleCampusAreas()" title="显示/隐藏高校范围">🏫 校园范围</button>
 
 <div id="offline-notice">
     <span>地图瓦片加载失败：地图底图需要联网，但你的记录数据仍在本地可用。</span>
@@ -498,6 +548,7 @@
 <div id="modal">
     <div class="modal-content">
         <h3>添加猫咪记录</h3>
+        <div id="record-area" class="area-preview">📍 先在地图上选择位置</div>
         <div class="form-group">
             <label>猫咪名称/标题</label>
             <input type="text" id="record-title" placeholder="例如：小区里的橘猫">
@@ -569,7 +620,8 @@
 <script src="../vendor/leaflet-heat.js"></script>
 <script>
     const { ipcRenderer } = require('electron');
-    const { escapeHtml, safeResourceUrl } = require('../../backend/utils');
+    const { escapeHtml, safeResourceUrl, detectArea, nearestAreaLabel, formatArea } = require('../../backend/utils');
+    const { loadAreasData } = require('../../backend/areas');
 
     // 初始化地图 (默认显示广州)
     const map = L.map('map').setView([23.1291, 113.2644], 11);
@@ -583,6 +635,66 @@
         offlineNoticeShown = true
         document.getElementById('offline-notice').style.display = 'flex'
     }).addTo(map);
+
+    // ==========================================
+    // 校园范围图层与位置判定（数据加载后已带 GCJ-02 坐标 polygon_gcj02）
+    // ==========================================
+    const areasData = loadAreasData()
+
+    // 判定坐标所在高校区域；校外时附带最近的校园参考
+    function areaOfCoords(lat, lng) {
+        const match = detectArea(areasData, lat, lng)
+        if (match) return { match, text: formatArea(match) }
+        const near = nearestAreaLabel(areasData, lat, lng)
+        return { match: null, text: near ? `校外 · ${near}` : '校外' }
+    }
+
+    // 记录的展示用区域文本：优先用保存的 area，旧记录按坐标现算
+    function areaTextOf(record) {
+        if (record.area) return record.area
+        if (Number.isFinite(record.lat) && Number.isFinite(record.lng)) {
+            const match = detectArea(areasData, record.lat, record.lng)
+            if (match) return formatArea(match)
+        }
+        return ''
+    }
+
+    let campusLayer = L.layerGroup()
+    let areasOn = true
+
+    function renderCampusLayer() {
+        campusLayer.clearLayers()
+        if (!areasOn) return
+        const campusStyle = { color: '#8f7166', weight: 2, dashArray: '6 5', fillColor: '#8f7166', fillOpacity: 0.05 }
+        const zoneStyle = { color: '#d8a04e', weight: 1, dashArray: '3 5', fillColor: '#d8a04e', fillOpacity: 0.04 }
+        for (const uni of areasData.universities || []) {
+            for (const campus of uni.campuses || []) {
+                if (Array.isArray(campus.polygon_gcj02) && campus.polygon_gcj02.length >= 3) {
+                    const poly = L.polygon(campus.polygon_gcj02, campusStyle)
+                    poly.bindTooltip(`🏫 ${uni.name}·${campus.name}`, { permanent: true, direction: 'center', className: 'campus-label' })
+                    campusLayer.addLayer(poly)
+                }
+                for (const zone of campus.zones || []) {
+                    if (Array.isArray(zone.polygon_gcj02) && zone.polygon_gcj02.length < 3) continue
+                    const zp = L.polygon(zone.polygon_gcj02, zoneStyle)
+                    zp.bindTooltip(zone.name, { sticky: true })
+                    campusLayer.addLayer(zp)
+                }
+            }
+        }
+    }
+
+    function toggleCampusAreas() {
+        areasOn = !areasOn
+        const btn = document.getElementById('areas-btn')
+        btn.classList.toggle('active', areasOn)
+        if (areasOn) {
+            renderCampusLayer()
+            campusLayer.addTo(map)
+        } else {
+            map.removeLayer(campusLayer)
+        }
+    }
 
     let isAdding = false;
     let currentLatLng = null;
@@ -649,6 +761,8 @@
                 if (record.images && record.images.length > 0) mainImg = record.images[0];
                 else if (record.image) mainImg = record.image;
 
+                const areaText = areaTextOf(record);
+
                 // 用 DOM 元素构建弹窗并绑定事件：避免字符串拼接 innerHTML 被 XSS 注入
                 const popupEl = document.createElement('div');
                 popupEl.className = 'custom-popup';
@@ -657,6 +771,7 @@
                     <div class="popup-info">
                         <div class="popup-title">${escapeHtml(record.title)}</div>
                         <div class="popup-desc">${escapeHtml(record.desc || '无描述')}</div>
+                        ${areaText ? `<div class="popup-area">🏫 ${escapeHtml(areaText)}</div>` : ''}
                         <div class="user-tag" style="font-size:12px;color:#666;margin-top:5px;display:flex;align-items:center;">
                             ${record.profiles?.avatar_url ? `<img src="${safeResourceUrl(record.profiles.avatar_url)}" style="width:20px;height:20px;border-radius:50%;margin-right:5px;">` : ''}
                              <span>${escapeHtml(record.profiles?.username || '本地记录')}</span>
@@ -740,6 +855,7 @@
                 : '<div style="width:80px;height:80px;background:#f0f0f0;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:20px;">📷</div>';
 
             const dateStr = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
+            const areaText = areaTextOf(record);
 
             card.innerHTML = `
                 ${imgHtml}
@@ -749,6 +865,7 @@
                     <div class="record-card-meta">
                          <span>👤 ${escapeHtml(record.profiles?.username || '本地记录')}</span>
                         ${dateStr ? `<span>📅 ${escapeHtml(dateStr)}</span>` : ''}
+                        ${areaText ? `<span>🏫 ${escapeHtml(areaText)}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -801,7 +918,10 @@
         }
         
         const date = new Date(record.id); // Assuming ID is timestamp-ish or we have created_at
-        document.getElementById('detail-meta').innerText = `记录时间: ${record.created_at ? new Date(record.created_at).toLocaleString() : date.toLocaleString()}`;
+        const areaText = areaTextOf(record);
+        document.getElementById('detail-meta').innerText =
+            (areaText ? `所在区域: ${areaText}\n` : '') +
+            `记录时间: ${record.created_at ? new Date(record.created_at).toLocaleString() : date.toLocaleString()}`;
 
         // Clear previous interactions state immediately to prevent showing old data
         document.getElementById('comments-list').innerHTML = '<div style="padding:10px;color:#999;text-align:center;">加载评论中...</div>';
@@ -943,10 +1063,23 @@
         currentLatLng = e.latlng;
         selectedImagePaths = [];
         updateImagePreview();
+        updateAreaPreview();
         document.getElementById('modal').style.display = 'flex';
         isAdding = false;
         document.getElementById('map').style.cursor = '';
     });
+
+    // 打点后立即判定坐标落在哪所高校/校区/片区
+    function updateAreaPreview() {
+        const box = document.getElementById('record-area');
+        if (!box) return;
+        if (!currentLatLng) {
+            box.textContent = '📍 先在地图上选择位置';
+            return;
+        }
+        const { text } = areaOfCoords(currentLatLng.lat, currentLatLng.lng);
+        box.textContent = `📍 ${text}`;
+    }
 
     function closeModal() {
         document.getElementById('modal').style.display = 'none';
@@ -997,13 +1130,21 @@
             alert('请输入标题');
             return;
         }
+        if (!currentLatLng) {
+            alert('请先在地图上选择位置');
+            return;
+        }
+
+        // 落在高校范围内时保存判定结果，校外留空
+        const { match } = areaOfCoords(currentLatLng.lat, currentLatLng.lng);
 
         const record = {
             lat: currentLatLng.lat,
             lng: currentLatLng.lng,
             title: title,
             desc: desc,
-            images: selectedImagePaths
+            images: selectedImagePaths,
+            area: match ? formatArea(match) : ''
         };
 
         try {
@@ -1039,9 +1180,11 @@
         }
 
         let filtered = allRecords.filter(r => {
-            const matchQuery = !query || 
-                (r.title && r.title.toLowerCase().includes(query)) || 
-                (r.desc && r.desc.toLowerCase().includes(query));
+            const matchQuery = !query ||
+                (r.title && r.title.toLowerCase().includes(query)) ||
+                (r.desc && r.desc.toLowerCase().includes(query)) ||
+                (r.area && r.area.toLowerCase().includes(query)) ||
+                (areaTextOf(r) && areaTextOf(r).toLowerCase().includes(query));
             
             const matchMine = !mineOnly || r.is_mine;
             
@@ -1116,19 +1259,23 @@
     
     function editMapRecord() {
         if (!currentDetailRecord) return;
-        
+
         editingRecordId = currentDetailRecord.id;
         currentLatLng = { lat: currentDetailRecord.lat, lng: currentDetailRecord.lng };
-        
+
         document.getElementById('record-title').value = currentDetailRecord.title;
         document.getElementById('record-desc').value = currentDetailRecord.desc || '';
-        
+
         selectedImagePaths = currentDetailRecord.images || (currentDetailRecord.image ? [currentDetailRecord.image] : []);
         updateImagePreview();
-        
+        updateAreaPreview();
+
         closeDetailModal();
         document.getElementById('modal').style.display = 'flex';
     }
+
+    renderCampusLayer();
+    campusLayer.addTo(map);
 
     loadMapRecords();
 </script>

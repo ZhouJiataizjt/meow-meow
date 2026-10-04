@@ -7,7 +7,13 @@ const {
     findRecordIndex,
     parseRecordTime,
     parseCatCount,
-    computeStats
+    computeStats,
+    wgs84ToGcj02,
+    pointInPolygon,
+    haversineMeters,
+    detectArea,
+    nearestAreaLabel,
+    formatArea
 } = require('../src/backend/utils')
 
 // ---------- escapeHtml / safeResourceUrl ----------
@@ -131,4 +137,132 @@ test('computeStats 对空数据和非法输入安全', () => {
     assert.strictEqual(stats.recordCount, 0)
     assert.strictEqual(stats.topLocations.length, 0)
     assert.strictEqual(stats.monthly.length, 6)
+})
+
+// ---------- 地理计算 ----------
+
+test('wgs84ToGcj02 在广州产生合理的偏移（百米级）', () => {
+    const [lat, lng] = [23.155, 113.352] // 华工五山附近
+    const [gLat, gLng] = wgs84ToGcj02(lat, lng)
+    assert.notStrictEqual(gLat, lat)
+    assert.notStrictEqual(gLng, lng)
+    const shift = haversineMeters(lat, lng, gLat, gLng)
+    assert.ok(shift > 50 && shift < 800, `偏移 ${shift}m 应在 50-800m 之间`)
+    // 中国境外应原样返回
+    assert.deepStrictEqual(wgs84ToGcj02(35.0, -105.0), [35.0, -105.0])
+})
+
+test('pointInPolygon 射线法判定', () => {
+    const square = [[0, 0], [0, 10], [10, 10], [10, 0]]
+    assert.strictEqual(pointInPolygon(5, 5, square), true)
+    assert.strictEqual(pointInPolygon(15, 5, square), false)
+    assert.strictEqual(pointInPolygon(0, 0, square), true)   // 顶点算在内
+    assert.strictEqual(pointInPolygon(5, 5, [[0, 0], [1, 1]]), false) // 环太小
+    assert.strictEqual(pointInPolygon(5, 5, null), false)
+})
+
+test('detectArea 返回最细粒度的归属', () => {
+    const areasData = {
+        universities: [{
+            name: '华南理工大学',
+            campuses: [{
+                name: '五山校区',
+                polygon: [[0, 0], [0, 10], [10, 10], [10, 0]],
+                zones: [{ name: '生活区', polygon: [[1, 1], [1, 4], [4, 4], [4, 1]] }]
+            }]
+        }]
+    }
+    assert.deepStrictEqual(detectArea(areasData, 2, 2), { university: '华南理工大学', campus: '五山校区', zone: '生活区' })
+    assert.deepStrictEqual(detectArea(areasData, 7, 7), { university: '华南理工大学', campus: '五山校区', zone: null })
+    assert.strictEqual(detectArea(areasData, 20, 20), null)
+    assert.strictEqual(detectArea(null, 2, 2), null)
+    assert.strictEqual(formatArea(detectArea(areasData, 2, 2)), '华南理工大学·五山校区·生活区')
+    assert.strictEqual(formatArea(null), '')
+})
+
+test('nearestAreaLabel 给出最近的校园参考', () => {
+    const areasData = {
+        universities: [{
+            name: '暨南大学',
+            campuses: [{ name: '石牌校区', polygon: [[23.125, 113.380], [23.125, 113.390], [23.132, 113.390], [23.132, 113.380]] }]
+        }]
+    }
+    // 距中心约 2km 内
+    const label = nearestAreaLabel(areasData, 23.110, 113.385, 5000)
+    assert.ok(label && label.includes('暨南大学·石牌校区'))
+    // 超出上限返回 null
+    assert.strictEqual(nearestAreaLabel(areasData, 30.000, 113.385, 5000), null)
+})
+
+// ---------- areas.json 数据健全性 ----------
+
+const fs = require('node:fs')
+const path = require('node:path')
+
+test('data/areas.json 结构与坐标范围合法', () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/areas.json'), 'utf-8'))
+    assert.ok(Array.isArray(raw.universities) && raw.universities.length >= 10)
+
+    const scut = raw.universities.find(u => u.name === '华南理工大学')
+    assert.ok(scut, '必须包含华南理工大学')
+    for (const campus of ['五山校区', '大学城校区', '广州国际校区']) {
+        assert.ok(scut.campuses.some(c => c.name === campus), `华工应有 ${campus}`)
+    }
+
+    for (const uni of raw.universities) {
+        for (const campus of uni.campuses) {
+            const lats = campus.polygon.map(p => p[0])
+            const lngs = campus.polygon.map(p => p[1])
+            assert.ok(campus.polygon.length >= 3, `${uni.name}${campus.name} 多边形至少 3 点`)
+            // 全部坐标应落在广州及周边范围内
+            assert.ok(Math.min(...lats) > 22.5 && Math.max(...lats) < 23.6, `${uni.name}${campus.name} 纬度越界`)
+            assert.ok(Math.min(...lngs) > 112.8 && Math.max(...lngs) < 114.0, `${uni.name}${campus.name} 经度越界`)
+        }
+    }
+})
+
+test('真实数据：华工五山校区内部采样点应命中校园判定', () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/areas.json'), 'utf-8'))
+    // areas.json 为 WGS84，detectArea 直接用原始多边形验证几何本身。
+    // 校区边界可能是凹多边形（bbox 中心不一定在界内），
+    // 因此从顶点向质心方向 20% 处采样，至少应有一点命中华工。
+    const scut = raw.universities.find(u => u.name === '华南理工大学')
+    const wushan = scut.campuses.find(c => c.name === '五山校区')
+    const ring = wushan.polygon
+    const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length
+    const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length
+
+    let hit = null
+    for (const [la, ln] of ring) {
+        const match = detectArea(raw, la + 0.2 * (cx - la), ln + 0.2 * (cy - ln))
+        if (match) { hit = match; break }
+    }
+    assert.ok(hit, '五山校区内部采样点应命中某个区域')
+    assert.strictEqual(hit.university, '华南理工大学')
+})
+
+test('坐标系一致性：WGS84 界内点转 GCJ02 后仍应判定在同一校区', () => {
+    // 应用加载时把 areas.json 的 WGS84 多边形转为 GCJ02 再做判定，
+    // 因此“WGS84 内点 → GCJ02 → 在 GCJ02 多边形内”必须成立
+    const { loadAreasData } = require('../src/backend/areas')
+    const gcjData = loadAreasData()
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/areas.json'), 'utf-8'))
+    const scutRaw = raw.universities.find(u => u.name === '华南理工大学')
+    const wushanRaw = scutRaw.campuses.find(c => c.name === '五山校区')
+    const ring = wushanRaw.polygon
+    const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length
+    const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length
+
+    let verified = 0
+    for (const [la, ln] of ring) {
+        const sampleLat = la + 0.2 * (cx - la)
+        const sampleLng = ln + 0.2 * (cy - ln)
+        if (!detectArea(raw, sampleLat, sampleLng)) continue // 跳过凹多边形界外采样点
+        const [gLat, gLng] = wgs84ToGcj02(sampleLat, sampleLng)
+        const match = detectArea(gcjData, gLat, gLng)
+        assert.ok(match, 'GCJ02 点应命中某个区域')
+        assert.strictEqual(match.university, '华南理工大学')
+        verified++
+    }
+    assert.ok(verified >= 5, `应有足够多有效采样点（实际 ${verified}）`)
 })

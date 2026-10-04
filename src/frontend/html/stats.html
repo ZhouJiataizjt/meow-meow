@@ -82,11 +82,29 @@
             <h3>品种/花色分布 Top 5</h3>
             <div id="top-species"></div>
         </div>
+
+        <div class="stats-section">
+            <h3>校园分布 Top 5</h3>
+            <div id="top-areas"></div>
+        </div>
     </div>
 
 <script>
     const { ipcRenderer } = require('electron')
-    const { escapeHtml, computeStats } = require('../../backend/utils')
+    const { escapeHtml, computeStats, detectArea, formatArea } = require('../../backend/utils')
+    const { loadAreasData } = require('../../backend/areas')
+
+    const areasData = loadAreasData()
+
+    // 地图记录若未保存过 area（旧数据），按坐标现算回填
+    function areaTextOf(record) {
+        if (record.area) return record.area
+        if (Number.isFinite(record.lat) && Number.isFinite(record.lng)) {
+            const match = detectArea(areasData, record.lat, record.lng)
+            if (match) return formatArea(match)
+        }
+        return ''
+    }
 
     function statCard(value, label) {
         return `<div class="stat-card"><div class="stat-value">${escapeHtml(value)}</div><div class="stat-label">${escapeHtml(label)}</div></div>`
@@ -114,7 +132,8 @@
             ipcRenderer.invoke('get_map_records'),
             ipcRenderer.invoke('get_cats')
         ])
-        const stats = computeStats(records || [], mapRecords || [], cats || [])
+        const mapRecordsWithArea = (mapRecords || []).map(r => ({ ...r, area: areaTextOf(r) }))
+        const stats = computeStats(records || [], mapRecordsWithArea, cats || [])
 
         document.getElementById('stats-grid').innerHTML =
             statCard(stats.monthCatsSeen, `本月遇到猫咪（${stats.monthLabel}）`) +
@@ -134,6 +153,7 @@
 
         renderBars('top-locations', stats.topLocations, stats.topLocations[0]?.count)
         renderBars('top-species', stats.topSpecies, stats.topSpecies[0]?.count)
+        renderBars('top-areas', stats.topAreas, stats.topAreas[0]?.count)
     }
 
     loadStats()

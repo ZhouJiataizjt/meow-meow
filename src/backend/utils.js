@@ -85,6 +85,7 @@ function computeStats(records = [], mapRecords = [], cats = [], now = new Date()
     let monthCatsSeen = 0
     const locationCount = {}
     const speciesCount = {}
+    const areaCount = {}
     const monthlyCount = {}
 
     for (const record of all) {
@@ -104,6 +105,10 @@ function computeStats(records = [], mapRecords = [], cats = [], now = new Date()
 
         const species = String(record.species || '').trim()
         if (species) speciesCount[species] = (speciesCount[species] || 0) + 1
+
+        // 所在高校区域（新增打点时自动判定写入；旧数据由调用方回填后传入）
+        const area = String(record.area || '').trim()
+        if (area) areaCount[area] = (areaCount[area] || 0) + 1
     }
 
     // 最近 6 个月的记录条数趋势（含空月份）
@@ -124,8 +129,119 @@ function computeStats(records = [], mapRecords = [], cats = [], now = new Date()
         monthLabel: monthPrefix,
         topLocations: topN(locationCount, 5),
         topSpecies: topN(speciesCount, 5),
+        topAreas: topN(areaCount, 5),
         monthly
     }
+}
+
+// ==========================================
+// 地理计算：校园范围判定
+// ==========================================
+
+const GCJ_A = 6378245.0
+const GCJ_EE = 0.00669342162296594323
+
+function outOfChina(lat, lng) {
+    return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
+}
+
+function transformLat(x, y) {
+    let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+    ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+    ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0
+    ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0
+    return ret
+}
+
+function transformLng(x, y) {
+    let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+    ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+    ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0
+    ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0
+    return ret
+}
+
+// WGS84（GPS/OSM）→ GCJ-02（高德底图坐标系）。校园边界数据以 WGS84 存储，
+// 渲染与判定前统一转到 GCJ-02，保证和高德瓦片、用户打点在同一坐标系下比较
+function wgs84ToGcj02(lat, lng) {
+    if (outOfChina(lat, lng)) return [lat, lng]
+    let dLat = transformLat(lng - 105.0, lat - 35.0)
+    let dLng = transformLng(lng - 105.0, lat - 35.0)
+    const radLat = lat / 180.0 * Math.PI
+    let magic = Math.sin(radLat)
+    magic = 1 - GCJ_EE * magic * magic
+    const sqrtMagic = Math.sqrt(magic)
+    dLat = (dLat * 180.0) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic) * Math.PI)
+    dLng = (dLng * 180.0) / (GCJ_A / sqrtMagic * Math.cos(radLat) * Math.PI)
+    return [lat + dLat, lng + dLng]
+}
+
+// 射线法：判断点是否在多边形内（ring 为 [lat, lng] 数组，首尾可不闭合）
+function pointInPolygon(lat, lng, ring) {
+    if (!Array.isArray(ring) || ring.length < 3) return false
+    let inside = false
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [latI, lngI] = ring[i]
+        const [latJ, lngJ] = ring[j]
+        const intersects = (lngI > lng) !== (lngJ > lng) &&
+            lat < (latJ - latI) * (lng - lngI) / (lngJ - lngI) + latI
+        if (intersects) inside = !inside
+    }
+    return inside
+}
+
+// 两点间的地表距离（米），用于“最近的学校”提示
+function haversineMeters(lat1, lng1, lat2, lng2) {
+    const rad = Math.PI / 180
+    const dLat = (lat2 - lat1) * rad
+    const dLng = (lng2 - lng1) * rad
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2
+    return 6371000 * 2 * Math.asin(Math.sqrt(a))
+}
+
+// 在高校范围数据中判定坐标归属，优先返回最细粒度（片区 > 校区 > 高校）
+function detectArea(areasData, lat, lng) {
+    if (!areasData || !Array.isArray(areasData.universities)) return null
+    for (const uni of areasData.universities) {
+        for (const campus of uni.campuses || []) {
+            const polygon = (campus.polygon_gcj02 || campus.polygon)
+            if (!pointInPolygon(lat, lng, polygon)) continue
+            if (Array.isArray(campus.zones)) {
+                for (const zone of campus.zones || []) {
+                    if (pointInPolygon(lat, lng, zone.polygon_gcj02 || zone.polygon)) {
+                        return { university: uni.name, campus: campus.name, zone: zone.name }
+                    }
+                }
+            }
+            return { university: uni.name, campus: campus.name, zone: null }
+        }
+    }
+    return null
+}
+
+// 校外时给出最近的校园参考，如「暨南大学·石牌校区 附近约 1.2km」
+function nearestAreaLabel(areasData, lat, lng, maxMeters = 3000) {
+    if (!areasData || !Array.isArray(areasData.universities)) return null
+    let best = null
+    for (const uni of areasData.universities) {
+        for (const campus of uni.campuses || []) {
+            const polygon = (campus.polygon_gcj02 || campus.polygon)
+            if (!Array.isArray(polygon) || polygon.length === 0) continue
+            const centerLat = polygon.reduce((s, p) => s + p[0], 0) / polygon.length
+            const centerLng = polygon.reduce((s, p) => s + p[1], 0) / polygon.length
+            const dist = haversineMeters(lat, lng, centerLat, centerLng)
+            if (!best || dist < best.dist) best = { university: uni.name, campus: campus.name, dist }
+        }
+    }
+    if (!best || best.dist > maxMeters) return null
+    const km = best.dist >= 1000 ? `${(best.dist / 1000).toFixed(1)}km` : `${Math.round(best.dist / 100) * 100}m`
+    return `${best.university}·${best.campus} 附近约 ${km}`
+}
+
+function formatArea(match) {
+    if (!match) return ''
+    return [match.university, match.campus, match.zone].filter(Boolean).join('·')
 }
 
 module.exports = {
@@ -135,5 +251,11 @@ module.exports = {
     findRecordIndex,
     parseRecordTime,
     parseCatCount,
-    computeStats
+    computeStats,
+    wgs84ToGcj02,
+    pointInPolygon,
+    haversineMeters,
+    detectArea,
+    nearestAreaLabel,
+    formatArea
 }

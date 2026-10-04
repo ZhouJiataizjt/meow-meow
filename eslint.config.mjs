@@ -4,13 +4,14 @@ export default [
         ignores: ['node_modules/**', 'build_output/**', 'src/frontend/vendor/**']
     },
     {
-        files: ['src/**/*.js', 'test/**/*.js'],
+        files: ['src/**/*.js', 'test/**/*.js', 'scripts/**/*.js'],
         languageOptions: {
             ecmaVersion: 2022,
             sourceType: 'commonjs',
             globals: {
                 console: 'readonly',
                 process: 'readonly',
+                fetch: 'readonly',
                 __dirname: 'readonly',
                 __filename: 'readonly',
                 Buffer: 'readonly',
