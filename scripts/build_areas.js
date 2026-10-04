@@ -76,7 +76,6 @@ async function main() {
     }
 
     addScutInternationalCampus(universities)
-    addQuadrantZones(universities)
 
     const output = {
         note: '高校范围数据。polygons 为多边形外环数组（[lat,lng] 闭合环），坐标为 WGS84（OSM 原始坐标系），应用加载时会转换为 GCJ-02 与高德底图对齐；一个校区可能有多个外环（主校区+飞地）。zones 为粗略的校内分区（按校区范围象限切分），可在本文件中手工编辑调整。',
@@ -189,30 +188,6 @@ function addScutInternationalCampus(universities) {
         source: '手工录入（近似范围，可修正）',
         zones: []
     })
-}
-
-// 为指定校区生成按象限切分的校内分区（示例，可在 areas.json 手工编辑）
-function addQuadrantZones(universities) {
-    const { mainRingOf } = require('../src/backend/utils')
-    for (const uni of universities) {
-        if (uni.name !== '华南理工大学') continue
-        for (const campus of uni.campuses) {
-            if (!['五山校区', '大学城校区'].includes(campus.name)) continue
-            // 以主环（面积最大的外环）的外接框为基准切分
-            const largest = mainRingOf(campus)
-            const lats = largest.map(p => p[0])
-            const lngs = largest.map(p => p[1])
-            const midLat = (Math.min(...lats) + Math.max(...lats)) / 2
-            const midLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
-            const zone = (name, ring) => ({ name, polygons: [ring] })
-            campus.zones = [
-                zone('西北片区', [[Math.max(...lats), Math.min(...lngs)], [Math.max(...lats), midLng], [midLat, midLng], [midLat, Math.min(...lngs)]]),
-                zone('东北片区', [[Math.max(...lats), midLng], [Math.max(...lats), Math.max(...lngs)], [midLat, Math.max(...lngs)], [midLat, midLng]]),
-                zone('西南片区', [[midLat, Math.min(...lngs)], [midLat, midLng], [Math.min(...lats), midLng], [Math.min(...lats), Math.min(...lngs)]]),
-                zone('东南片区', [[midLat, midLng], [midLat, Math.max(...lngs)], [Math.min(...lats), Math.max(...lngs)], [Math.min(...lats), midLng]])
-            ]
-        }
-    }
 }
 
 main().catch(err => { console.error(err); process.exit(1) })
