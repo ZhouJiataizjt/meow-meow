@@ -211,14 +211,28 @@ test('data/areas.json 结构与坐标范围合法', () => {
 
     for (const uni of raw.universities) {
         for (const campus of uni.campuses) {
-            const lats = campus.polygon.map(p => p[0])
-            const lngs = campus.polygon.map(p => p[1])
-            assert.ok(campus.polygon.length >= 3, `${uni.name}${campus.name} 多边形至少 3 点`)
-            // 全部坐标应落在广州及周边范围内
-            assert.ok(Math.min(...lats) > 22.5 && Math.max(...lats) < 23.6, `${uni.name}${campus.name} 纬度越界`)
-            assert.ok(Math.min(...lngs) > 112.8 && Math.max(...lngs) < 114.0, `${uni.name}${campus.name} 经度越界`)
+            // polygons 为外环数组，支持一个校区多个不相交的边界
+            assert.ok(Array.isArray(campus.polygons) && campus.polygons.length >= 1,
+                `${uni.name}${campus.name} 应有 polygons 外环数组`)
+            for (const ring of campus.polygons) {
+                const lats = ring.map(p => p[0])
+                const lngs = ring.map(p => p[1])
+                assert.ok(ring.length >= 3, `${uni.name}${campus.name} 每个环至少 3 点`)
+                // 全部坐标应落在广州及周边范围内
+                assert.ok(Math.min(...lats) > 22.5 && Math.max(...lats) < 23.6, `${uni.name}${campus.name} 纬度越界`)
+                assert.ok(Math.min(...lngs) > 112.8 && Math.max(...lngs) < 114.0, `${uni.name}${campus.name} 经度越界`)
+            }
         }
     }
+})
+
+test('华工大学城校区应保留全部外环（multipolygon 回归测试）', () => {
+    // OSM 中该校区由主校区+一块飞地两个不相交外环组成，
+    // 旧版构建脚本只保留第一个环导致边界缺失
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/areas.json'), 'utf-8'))
+    const scut = raw.universities.find(u => u.name === '华南理工大学')
+    const uctown = scut.campuses.find(c => c.name === '大学城校区')
+    assert.ok(uctown.polygons.length >= 2, `大学城校区应有至少 2 个外环（实际 ${uctown.polygons.length}）`)
 })
 
 test('真实数据：华工五山校区内部采样点应命中校园判定', () => {
@@ -228,7 +242,7 @@ test('真实数据：华工五山校区内部采样点应命中校园判定', ()
     // 因此从顶点向质心方向 20% 处采样，至少应有一点命中华工。
     const scut = raw.universities.find(u => u.name === '华南理工大学')
     const wushan = scut.campuses.find(c => c.name === '五山校区')
-    const ring = wushan.polygon
+    const ring = wushan.polygons[0]
     const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length
     const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length
 
@@ -241,28 +255,39 @@ test('真实数据：华工五山校区内部采样点应命中校园判定', ()
     assert.strictEqual(hit.university, '华南理工大学')
 })
 
-test('坐标系一致性：WGS84 界内点转 GCJ02 后仍应判定在同一校区', () => {
+test('坐标系一致性：WGS84 判定结果转 GCJ02 后必须完全一致', () => {
     // 应用加载时把 areas.json 的 WGS84 多边形转为 GCJ02 再做判定，
-    // 因此“WGS84 内点 → GCJ02 → 在 GCJ02 多边形内”必须成立
+    // 不变量：同一个点在 WGS84 数据上的判定结果（高校+校区），
+    // 换算成 GCJ02 后在转换数据上必须命中完全相同的区域。
+    // （五山片区各校边界在 OSM 中相邻交错，采样点可能合法落在他校界内，
+    //   因此断言的是“转换前后一致”，而非“必须命中华工”。）
     const { loadAreasData } = require('../src/backend/areas')
     const gcjData = loadAreasData()
     const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/areas.json'), 'utf-8'))
     const scutRaw = raw.universities.find(u => u.name === '华南理工大学')
     const wushanRaw = scutRaw.campuses.find(c => c.name === '五山校区')
-    const ring = wushanRaw.polygon
+    const ring = wushanRaw.polygons[0]
     const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length
     const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length
 
     let verified = 0
+    let scutVerified = 0
     for (const [la, ln] of ring) {
         const sampleLat = la + 0.2 * (cx - la)
         const sampleLng = ln + 0.2 * (cy - ln)
-        if (!detectArea(raw, sampleLat, sampleLng)) continue // 跳过凹多边形界外采样点
+        const rawMatch = detectArea(raw, sampleLat, sampleLng)
+        if (!rawMatch) continue // 跳过落在所有界外的采样点（凹多边形）
+
         const [gLat, gLng] = wgs84ToGcj02(sampleLat, sampleLng)
         const match = detectArea(gcjData, gLat, gLng)
-        assert.ok(match, 'GCJ02 点应命中某个区域')
-        assert.strictEqual(match.university, '华南理工大学')
+        assert.ok(match, `GCJ02 点应命中某个区域（原始判定：${formatArea(rawMatch)}）`)
+        assert.strictEqual(match.university, rawMatch.university,
+            `转换前后高校不一致：${formatArea(rawMatch)} vs ${formatArea(match)}`)
+        assert.strictEqual(match.campus, rawMatch.campus,
+            `转换前后校区不一致：${formatArea(rawMatch)} vs ${formatArea(match)}`)
         verified++
+        if (rawMatch.university === '华南理工大学') scutVerified++
     }
     assert.ok(verified >= 5, `应有足够多有效采样点（实际 ${verified}）`)
+    assert.ok(scutVerified >= 3, `应有足够多命中华工的采样点（实际 ${scutVerified}）`)
 })

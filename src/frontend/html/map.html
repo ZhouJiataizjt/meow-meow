@@ -620,11 +620,29 @@
 <script src="../vendor/leaflet-heat.js"></script>
 <script>
     const { ipcRenderer } = require('electron');
-    const { escapeHtml, safeResourceUrl, detectArea, nearestAreaLabel, formatArea } = require('../../backend/utils');
+    const { escapeHtml, safeResourceUrl, detectArea, nearestAreaLabel, formatArea, mainRingOf } = require('../../backend/utils');
     const { loadAreasData } = require('../../backend/areas');
 
-    // 初始化地图 (默认显示广州)
-    const map = L.map('map').setView([23.1291, 113.2644], 11);
+    // ==========================================
+    // 校园范围图层与位置判定（数据加载后已带 GCJ-02 坐标 polygons_gcj02）
+    // ==========================================
+    const areasData = loadAreasData()
+
+    // 初始视野：华工大学城校区（中心取自主环），数据异常时退回固定坐标
+    function scutUctownCenter() {
+        const scut = (areasData.universities || []).find(u => u.name === '华南理工大学')
+        const campus = scut && (scut.campuses || []).find(c => c.name === '大学城校区')
+        const mainRing = campus && mainRingOf(campus)
+        if (mainRing && mainRing.length > 0) {
+            const lat = mainRing.reduce((s, p) => s + p[0], 0) / mainRing.length
+            const lng = mainRing.reduce((s, p) => s + p[1], 0) / mainRing.length
+            return [lat, lng]
+        }
+        return [23.0549, 113.3973]
+    }
+
+    // 初始化地图 (默认定位到华工大学城校区)
+    const map = L.map('map').setView(scutUctownCenter(), 15);
 
     // 使用 高德地图 瓦片图层（离线时通过 tileerror 给出提示，记录数据不受影响）
     let offlineNoticeShown = false
@@ -637,9 +655,8 @@
     }).addTo(map);
 
     // ==========================================
-    // 校园范围图层与位置判定（数据加载后已带 GCJ-02 坐标 polygon_gcj02）
+    // （渲染与判定所用数据已在上方加载）
     // ==========================================
-    const areasData = loadAreasData()
 
     // 判定坐标所在高校区域；校外时附带最近的校园参考
     function areaOfCoords(lat, lng) {
@@ -669,14 +686,15 @@
         const zoneStyle = { color: '#d8a04e', weight: 1, dashArray: '3 5', fillColor: '#d8a04e', fillOpacity: 0.04 }
         for (const uni of areasData.universities || []) {
             for (const campus of uni.campuses || []) {
-                if (Array.isArray(campus.polygon_gcj02) && campus.polygon_gcj02.length >= 3) {
-                    const poly = L.polygon(campus.polygon_gcj02, campusStyle)
+                // polygons_gcj02 是外环数组：L.polygon 直接支持多环（主校区+飞地）
+                if (Array.isArray(campus.polygons_gcj02) && campus.polygons_gcj02.length > 0) {
+                    const poly = L.polygon(campus.polygons_gcj02, campusStyle)
                     poly.bindTooltip(`🏫 ${uni.name}·${campus.name}`, { permanent: true, direction: 'center', className: 'campus-label' })
                     campusLayer.addLayer(poly)
                 }
                 for (const zone of campus.zones || []) {
-                    if (Array.isArray(zone.polygon_gcj02) && zone.polygon_gcj02.length < 3) continue
-                    const zp = L.polygon(zone.polygon_gcj02, zoneStyle)
+                    if (!Array.isArray(zone.polygons_gcj02) || zone.polygons_gcj02.length === 0) continue
+                    const zp = L.polygon(zone.polygons_gcj02, zoneStyle)
                     zp.bindTooltip(zone.name, { sticky: true })
                     campusLayer.addLayer(zp)
                 }

@@ -200,16 +200,51 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
     return 6371000 * 2 * Math.asin(Math.sqrt(a))
 }
 
+// 校区/片区的多边形环数组：优先用转换后的 GCJ-02 环（应用运行时），
+// 其次 WGS84 原始环（测试/构建场景）；兼容旧的单环 polygon 字段
+function polygonsOf(feature) {
+    if (!feature) return []
+    if (Array.isArray(feature.polygons_gcj02) && feature.polygons_gcj02.length > 0) return feature.polygons_gcj02
+    if (Array.isArray(feature.polygons)) return feature.polygons
+    if (Array.isArray(feature.polygon_gcj02)) return [feature.polygon_gcj02]
+    if (Array.isArray(feature.polygon)) return [feature.polygon]
+    return []
+}
+
+// 用鞋带公式估算环的面积（平方米），用于挑选校区的“主环”
+function ringAreaMeters2(ring) {
+    if (!Array.isArray(ring) || ring.length < 3) return 0
+    const lats = ring.map(p => p[0])
+    const meanLat = lats.reduce((s, v) => s + v, 0) / lats.length
+    const MX = 111320 * Math.cos(meanLat * Math.PI / 180)
+    const MY = 110540
+    let sum = 0
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [latI, lngI] = ring[i]
+        const [latJ, lngJ] = ring[j]
+        sum += (lngJ * MX) * (latI * MY) - (lngI * MX) * (latJ * MY)
+    }
+    return Math.abs(sum) / 2
+}
+
+// 挑选校区的主环（面积最大的外环），用于取中心点等
+function mainRingOf(feature) {
+    const rings = polygonsOf(feature)
+    if (rings.length === 0) return null
+    return rings.reduce((a, b) => ringAreaMeters2(b) > ringAreaMeters2(a) ? b : a)
+}
+
 // 在高校范围数据中判定坐标归属，优先返回最细粒度（片区 > 校区 > 高校）
 function detectArea(areasData, lat, lng) {
     if (!areasData || !Array.isArray(areasData.universities)) return null
     for (const uni of areasData.universities) {
         for (const campus of uni.campuses || []) {
-            const polygon = (campus.polygon_gcj02 || campus.polygon)
-            if (!pointInPolygon(lat, lng, polygon)) continue
+            const rings = polygonsOf(campus).map(ring => ring.polygon_gcj02 || ring)
+            if (!rings.some(ring => pointInPolygon(lat, lng, ring))) continue
             if (Array.isArray(campus.zones)) {
                 for (const zone of campus.zones || []) {
-                    if (pointInPolygon(lat, lng, zone.polygon_gcj02 || zone.polygon)) {
+                    const zoneRings = polygonsOf(zone).map(ring => ring.polygon_gcj02 || ring)
+                    if (zoneRings.some(ring => pointInPolygon(lat, lng, ring))) {
                         return { university: uni.name, campus: campus.name, zone: zone.name }
                     }
                 }
@@ -226,10 +261,10 @@ function nearestAreaLabel(areasData, lat, lng, maxMeters = 3000) {
     let best = null
     for (const uni of areasData.universities) {
         for (const campus of uni.campuses || []) {
-            const polygon = (campus.polygon_gcj02 || campus.polygon)
-            if (!Array.isArray(polygon) || polygon.length === 0) continue
-            const centerLat = polygon.reduce((s, p) => s + p[0], 0) / polygon.length
-            const centerLng = polygon.reduce((s, p) => s + p[1], 0) / polygon.length
+            const mainRing = mainRingOf(campus)
+            if (!mainRing || mainRing.length === 0) continue
+            const centerLat = mainRing.reduce((s, p) => s + p[0], 0) / mainRing.length
+            const centerLng = mainRing.reduce((s, p) => s + p[1], 0) / mainRing.length
             const dist = haversineMeters(lat, lng, centerLat, centerLng)
             if (!best || dist < best.dist) best = { university: uni.name, campus: campus.name, dist }
         }
@@ -257,5 +292,8 @@ module.exports = {
     haversineMeters,
     detectArea,
     nearestAreaLabel,
-    formatArea
+    formatArea,
+    polygonsOf,
+    ringAreaMeters2,
+    mainRingOf
 }

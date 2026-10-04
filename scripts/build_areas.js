@@ -1,6 +1,6 @@
 // 一次性构建脚本：从 OpenStreetMap (Overpass API) 拉取广州高校边界，
 // 简化后生成 data/areas.json。产物提交到仓库后，本脚本仅在未来更新边界时手动重跑。
-// 用法: node .tmp/build_areas.js
+// 用法: node scripts/build_areas.js
 const fs = require('fs')
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter'
@@ -43,39 +43,43 @@ async function main() {
     const byId = new Map(data.elements.map(e => [e.type + '/' + e.id, e]))
 
     const universities = []
-    const addToUniversities = (university, campus, polygon, source) => {
+    const addToUniversities = (university, campus, polygons, source) => {
         let uni = universities.find(u => u.name === university)
         if (!uni) {
             uni = { name: university, campuses: [] }
             universities.push(uni)
         }
-        uni.campuses.push({ name: campus, polygon, source, zones: [] })
+        uni.campuses.push({ name: campus, polygons, source, zones: [] })
     }
 
     for (const [id, meta] of Object.entries(RELATIONS)) {
         const rel = byId.get('relation/' + id)
         if (!rel) { console.warn('missing relation', id); continue }
-        const ring = assembleOuterRing(rel.members || [])
-        if (!ring) { console.warn('no outer ring for relation', id); continue }
-        const simplified = simplifyRing(ring)
-        addToUniversities(meta.university, meta.campus, simplified, `OSM relation ${id}`)
-        console.log(meta.university, meta.campus, '->', simplified.length, 'points')
+        // OSM 高校边界可能是 multipolygon：多个不相交的外环（如主校区+飞地）都要保留
+        const rings = assembleOuterRings(rel.members || [])
+        if (rings.length === 0) { console.warn('no outer ring for relation', id); continue }
+        const polygons = rings
+            .map(ring => simplifyRing(ring))
+            .filter(ring => ringDiagonalMeters(ring) >= 80)
+        if (polygons.length === 0) { console.warn('all rings too small for relation', id); continue }
+        addToUniversities(meta.university, meta.campus, polygons, `OSM relation ${id}`)
+        console.log(meta.university, meta.campus, '->', polygons.length, 'ring(s):', polygons.map(r => r.length + 'pts').join('/'))
     }
 
     for (const [id, meta] of Object.entries(WAYS)) {
         const way = byId.get('way/' + id)
         if (!way || !way.geometry) { console.warn('missing way', id); continue }
         const ring = way.geometry.map(p => [p.lat, p.lon])
-        const simplified = simplifyRing(ring)
-        addToUniversities(meta.university, meta.campus, simplified, `OSM way ${id}`)
-        console.log(meta.university, meta.campus, '->', simplified.length, 'points')
+        const polygons = [simplifyRing(ring)]
+        addToUniversities(meta.university, meta.campus, polygons, `OSM way ${id}`)
+        console.log(meta.university, meta.campus, '->', polygons[0].length, 'points')
     }
 
     addScutInternationalCampus(universities)
     addQuadrantZones(universities)
 
     const output = {
-        note: '高校范围数据。多边形坐标为 WGS84（OSM 原始坐标系），应用加载时会转换为 GCJ-02 与高德底图对齐。zones 为粗略的校内分区（按校区范围象限切分），可在本文件中手工编辑调整。',
+        note: '高校范围数据。polygons 为多边形外环数组（[lat,lng] 闭合环），坐标为 WGS84（OSM 原始坐标系），应用加载时会转换为 GCJ-02 与高德底图对齐；一个校区可能有多个外环（主校区+飞地）。zones 为粗略的校内分区（按校区范围象限切分），可在本文件中手工编辑调整。',
         updated_at: new Date().toISOString().slice(0, 10),
         universities
     }
@@ -83,31 +87,46 @@ async function main() {
     console.log('written data/areas.json')
 }
 
-// 把 multipolygon 的 outer 成员按端点拼接成一个闭合环（取最长的一个外环）
-function assembleOuterRing(members) {
+// 把 multipolygon 的 outer 成员按端点拼接成若干闭合环：
+// 高校边界可能由多个不相交的外环组成（主校区+飞地），每个环都要独立保留
+function assembleOuterRings(members) {
     const segments = members
         .filter(m => m.type === 'way' && m.role === 'outer' && m.geometry)
         .map(m => m.geometry.map(p => [p.lat, p.lon]).filter(([lat, lon]) => lat != null))
         .filter(seg => seg.length > 1)
-    if (segments.length === 0) return null
+    if (segments.length === 0) return []
 
     const EPS = 1e-9
     const same = (a, b) => Math.abs(a[0] - b[0]) < EPS && Math.abs(a[1] - b[1]) < EPS
 
-    let ring = segments.shift()
-    let extended = true
-    while (extended && segments.length > 0) {
-        extended = false
-        for (let i = 0; i < segments.length; i++) {
-            const seg = segments[i]
-            const head = ring[0], tail = ring[ring.length - 1]
-            if (same(tail, seg[0])) { ring = ring.concat(seg.slice(1)); segments.splice(i, 1); extended = true; break }
-            if (same(tail, seg[seg.length - 1])) { ring = ring.concat(seg.slice().reverse().slice(1)); segments.splice(i, 1); extended = true; break }
-            if (same(head, seg[seg.length - 1])) { ring = seg.slice(0, -1).concat(ring); segments.splice(i, 1); extended = true; break }
-            if (same(head, seg[0])) { ring = seg.slice().reverse().slice(0, -1).concat(ring); segments.splice(i, 1); extended = true; break }
+    const rings = []
+    while (segments.length > 0) {
+        let ring = segments.shift()
+        let extended = true
+        while (extended && segments.length > 0) {
+            extended = false
+            for (let i = 0; i < segments.length; i++) {
+                const seg = segments[i]
+                const head = ring[0], tail = ring[ring.length - 1]
+                if (same(tail, seg[0])) { ring = ring.concat(seg.slice(1)); segments.splice(i, 1); extended = true; break }
+                if (same(tail, seg[seg.length - 1])) { ring = ring.concat(seg.slice().reverse().slice(1)); segments.splice(i, 1); extended = true; break }
+                if (same(head, seg[seg.length - 1])) { ring = seg.slice(0, -1).concat(ring); segments.splice(i, 1); extended = true; break }
+                if (same(head, seg[0])) { ring = seg.slice().reverse().slice(0, -1).concat(ring); segments.splice(i, 1); extended = true; break }
+            }
         }
+        rings.push(ring)
     }
-    return ring
+    return rings
+}
+
+// 环的外接框对角线长度（米），用于丢弃过小的碎环
+function ringDiagonalMeters(ring) {
+    const lats = ring.map(p => p[0])
+    const lngs = ring.map(p => p[1])
+    const dLat = (Math.max(...lats) - Math.min(...lats)) * 111320
+    const midLat = (Math.max(...lats) + Math.min(...lats)) / 2
+    const dLng = (Math.max(...lngs) - Math.min(...lngs)) * 111320 * Math.cos(midLat * Math.PI / 180)
+    return Math.hypot(dLat, dLng)
 }
 
 // Douglas-Peucker 简化，最多保留 maxPoints 个点
@@ -157,7 +176,7 @@ function pointToSegmentDist(p, a, b) {
 
 // 华工国际校区未收录进 OSM，手工录入近似范围（广州番禺，兴业大道旁）
 function addScutInternationalCampus(universities) {
-    const polygon = [
+    const ring = [
         [23.0042, 113.3571], [23.0056, 113.3648], [23.0026, 113.3719],
         [22.9962, 113.3745], [22.9896, 113.3705], [22.9878, 113.3623],
         [22.9913, 113.3561], [22.9983, 113.3538]
@@ -166,7 +185,7 @@ function addScutInternationalCampus(universities) {
     if (!uni) { uni = { name: '华南理工大学', campuses: [] }; universities.unshift(uni) }
     uni.campuses.push({
         name: '广州国际校区',
-        polygon,
+        polygons: [ring],
         source: '手工录入（近似范围，可修正）',
         zones: []
     })
@@ -174,19 +193,23 @@ function addScutInternationalCampus(universities) {
 
 // 为指定校区生成按象限切分的校内分区（示例，可在 areas.json 手工编辑）
 function addQuadrantZones(universities) {
+    const { mainRingOf } = require('../src/backend/utils')
     for (const uni of universities) {
         if (uni.name !== '华南理工大学') continue
         for (const campus of uni.campuses) {
             if (!['五山校区', '大学城校区'].includes(campus.name)) continue
-            const lats = campus.polygon.map(p => p[0])
-            const lngs = campus.polygon.map(p => p[1])
+            // 以主环（面积最大的外环）的外接框为基准切分
+            const largest = mainRingOf(campus)
+            const lats = largest.map(p => p[0])
+            const lngs = largest.map(p => p[1])
             const midLat = (Math.min(...lats) + Math.max(...lats)) / 2
             const midLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
+            const zone = (name, ring) => ({ name, polygons: [ring] })
             campus.zones = [
-                { name: '西北片区', polygon: [[Math.max(...lats), Math.min(...lngs)], [Math.max(...lats), midLng], [midLat, midLng], [midLat, Math.min(...lngs)]] },
-                { name: '东北片区', polygon: [[Math.max(...lats), midLng], [Math.max(...lats), Math.max(...lngs)], [midLat, Math.max(...lngs)], [midLat, midLng]] },
-                { name: '西南片区', polygon: [[midLat, Math.min(...lngs)], [midLat, midLng], [Math.min(...lats), midLng], [Math.min(...lats), Math.min(...lngs)]] },
-                { name: '东南片区', polygon: [[midLat, midLng], [midLat, Math.max(...lngs)], [Math.min(...lats), Math.max(...lngs)], [Math.min(...lats), midLng]] }
+                zone('西北片区', [[Math.max(...lats), Math.min(...lngs)], [Math.max(...lats), midLng], [midLat, midLng], [midLat, Math.min(...lngs)]]),
+                zone('东北片区', [[Math.max(...lats), midLng], [Math.max(...lats), Math.max(...lngs)], [midLat, Math.max(...lngs)], [midLat, midLng]]),
+                zone('西南片区', [[midLat, Math.min(...lngs)], [midLat, midLng], [Math.min(...lats), midLng], [Math.min(...lats), Math.min(...lngs)]]),
+                zone('东南片区', [[midLat, midLng], [midLat, Math.max(...lngs)], [Math.min(...lats), Math.max(...lngs)], [Math.min(...lats), midLng]])
             ]
         }
     }

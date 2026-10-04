@@ -8,14 +8,22 @@ const { wgs84ToGcj02 } = require('./utils')
 
 const AREAS_FILE = path.join(__dirname, '../../data/areas.json')
 
+// 把单个要素（校区/分区）的 WGS84 环数组转换为 GCJ-02，写入 polygons_gcj02
+function convertFeature(feature) {
+    const rings = Array.isArray(feature.polygons)
+        ? feature.polygons
+        : (Array.isArray(feature.polygon) ? [feature.polygon] : [])
+    feature.polygons_gcj02 = rings.map(ring => ring.map(([la, ln]) => wgs84ToGcj02(la, ln)))
+}
+
 function loadAreasData() {
     try {
         const raw = JSON.parse(fs.readFileSync(AREAS_FILE, 'utf-8'))
         for (const uni of raw.universities || []) {
             for (const campus of uni.campuses || []) {
-                campus.polygon_gcj02 = (campus.polygon || []).map(([la, ln]) => wgs84ToGcj02(la, ln))
+                convertFeature(campus)
                 for (const zone of campus.zones || []) {
-                    zone.polygon_gcj02 = (zone.polygon || []).map(([la, ln]) => wgs84ToGcj02(la, ln))
+                    convertFeature(zone)
                 }
             }
         }
