@@ -142,6 +142,31 @@
             color: white;
         }
 
+        /* 校园汇总弹窗 */
+        .campus-summary { font-size: 13px; line-height: 1.7; color: #4a3b33; }
+        .campus-summary-title { font-weight: 700; color: var(--primary-color); margin-bottom: 4px; font-size: 14px; }
+        .campus-summary button {
+            width: 100%;
+            margin-top: 8px;
+            background: #df7d5c;
+            color: white;
+            font-size: 12px;
+            min-height: 30px;
+        }
+
+        /* 猫点下钻返回条 */
+        .cluster-back {
+            background: #fff0e9;
+            color: #b85538;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-bottom: 4px;
+        }
+        .cluster-back:hover { background: #ffe3d6; }
+
         /* 校园边界永久标签 */
         .campus-label {
             background: rgba(255, 255, 255, 0.85);
@@ -300,6 +325,15 @@
             background: #e7f5ff;
             border-color: #df7d5c;
             color: #1971c2;
+        }
+
+        /* 筛选栏里的下拉框 */
+        select.filter-control {
+            padding: 0 8px;
+            cursor: pointer;
+            max-width: 200px;
+            margin: 0;
+            font-family: inherit;
         }
 
         /* Date Range */
@@ -526,16 +560,39 @@
     <div class="filter-section">
         <!-- Mine Only -->
         <label class="filter-control filter-toggle" id="mine-chip">
-            <input type="checkbox" id="filter-mine-only" onchange="filterList()"> 
+            <input type="checkbox" id="filter-mine-only" onchange="onFilterChanged()">
             <span>只看我的</span>
         </label>
-        
+
         <!-- Date Range -->
         <div class="filter-control date-range-group" title="筛选时间范围">
-            <input type="date" id="date-start" class="date-input" onchange="filterList()">
+            <input type="date" id="date-start" class="date-input" onchange="onFilterChanged()">
             <span class="date-separator">-</span>
-            <input type="date" id="date-end" class="date-input" onchange="filterList()">
+            <input type="date" id="date-end" class="date-input" onchange="onFilterChanged()">
         </div>
+
+        <!-- Campus Filter -->
+        <select id="area-filter" class="filter-control" title="按高校/校区筛选" onchange="onFilterChanged()"></select>
+
+        <!-- Nearby Radius -->
+        <select id="distance-filter" class="filter-control" title="只看地图视野中心附近" onchange="onFilterChanged()">
+            <option value="0">不限距离</option>
+            <option value="500">500m 内</option>
+            <option value="1000">1km 内</option>
+            <option value="3000">3km 内</option>
+        </select>
+
+        <!-- Distance Sort -->
+        <label class="filter-control filter-toggle" id="distance-sort-chip" title="按与地图视野中心的距离排序">
+            <input type="checkbox" id="distance-sort" onchange="onFilterChanged()">
+            <span>按距离排序</span>
+        </label>
+
+        <!-- Cluster Mode -->
+        <label class="filter-control filter-toggle" id="cluster-chip" title="把 50 米内聚集的打卡聚合为同一位置">
+            <input type="checkbox" id="cluster-mode" onchange="onFilterChanged()">
+            <span>按位置聚合</span>
+        </label>
     </div>
 
     <div id="list-content"></div>
@@ -620,8 +677,8 @@
 <script src="../vendor/leaflet-heat.js"></script>
 <script>
     const { ipcRenderer } = require('electron');
-    const { escapeHtml, safeResourceUrl, detectArea, nearestAreaLabel, formatArea, mainRingOf } = require('../../backend/utils');
-    const { loadAreasData } = require('../../backend/areas');
+    const { escapeHtml, safeResourceUrl, detectArea, nearestAreaLabel, formatArea, mainRingOf, haversineMeters, clusterRecords, parseRecordTime } = require('../../backend/utils');
+    const { loadAreasData, campusOptions } = require('../../backend/areas');
 
     // ==========================================
     // 校园范围图层与位置判定（数据加载后已带 GCJ-02 坐标 polygons_gcj02）
@@ -690,6 +747,8 @@
                 if (Array.isArray(campus.polygons_gcj02) && campus.polygons_gcj02.length > 0) {
                     const poly = L.polygon(campus.polygons_gcj02, campusStyle)
                     poly.bindTooltip(`🏫 ${uni.name}·${campus.name}`, { permanent: true, direction: 'center', className: 'campus-label' })
+                    // 点击校园色块查看该区域汇总（新增打点模式下不弹）
+                    poly.bindPopup(() => buildCampusSummaryPopup(`${uni.name}·${campus.name}`))
                     campusLayer.addLayer(poly)
                 }
                 for (const zone of campus.zones || []) {
@@ -703,15 +762,47 @@
     }
 
     function toggleCampusAreas() {
-        areasOn = !areasOn
-        const btn = document.getElementById('areas-btn')
-        btn.classList.toggle('active', areasOn)
+        areasOn = !areasOn;
+        const btn = document.getElementById('areas-btn');
+        btn.classList.toggle('active', areasOn);
         if (areasOn) {
             renderCampusLayer()
             campusLayer.addTo(map)
         } else {
             map.removeLayer(campusLayer)
         }
+    }
+
+    // 校园区域汇总弹窗：打卡数、猫点数、最近发现，可一键跳到筛选好的列表
+    function buildCampusSummaryPopup(areaValue) {
+        const records = allRecords.filter(r => {
+            const area = areaTextOf(r);
+            return area === areaValue || area.startsWith(areaValue + '·');
+        });
+
+        const el = document.createElement('div');
+        el.className = 'campus-summary';
+
+        let latest = null;
+        for (const r of records) {
+            if (!latest || parseRecordTime(r) > parseRecordTime(latest)) latest = r;
+        }
+        const clusterCount = clusterRecords(records, 50, r => ({ lat: r.lat, lng: r.lng }))
+            .filter(c => c.center).length;
+
+        el.innerHTML = `
+            <div class="campus-summary-title">🏫 ${escapeHtml(areaValue)}</div>
+            <div>共 ${records.length} 条打卡记录 · ${clusterCount} 处猫点</div>
+            ${latest ? `<div>最近发现：${escapeHtml(latest.title || '未命名')}（${new Date(parseRecordTime(latest)).toLocaleDateString()}）</div>` : '<div>暂无记录，快去发现第一只猫吧</div>'}
+            <button>查看这个区域的记录</button>
+        `;
+        el.querySelector('button').addEventListener('click', () => {
+            currentCluster = null;
+            document.getElementById('area-filter').value = areaValue;
+            map.closePopup();
+            showRecordsList();
+        });
+        return el;
     }
 
     let isAdding = false;
@@ -721,6 +812,7 @@
     let currentUser = null;
     let cloudEnabled = false;
     let selectedImagePaths = [];
+    let currentCluster = null; // 猫点聚合的下钻状态
 
     // Icons
     const makeCatIcon = (background) => L.divIcon({
@@ -847,14 +939,14 @@
     // List View Logic
     function showRecordsList() {
         document.getElementById('records-list-container').style.display = 'flex';
-        renderList(allRecords);
+        filterList();
     }
 
     function hideRecordsList() {
         document.getElementById('records-list-container').style.display = 'none';
     }
 
-    function renderList(records) {
+    function renderList(records, distanceCenter = null) {
         const container = document.getElementById('list-content');
         container.innerHTML = '';
         records.forEach(record => {
@@ -874,6 +966,7 @@
 
             const dateStr = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
             const areaText = areaTextOf(record);
+            const distText = distanceCenter ? fmtDistance(recordDistance(record, distanceCenter)) : '';
 
             card.innerHTML = `
                 ${imgHtml}
@@ -884,6 +977,7 @@
                          <span>👤 ${escapeHtml(record.profiles?.username || '本地记录')}</span>
                         ${dateStr ? `<span>📅 ${escapeHtml(dateStr)}</span>` : ''}
                         ${areaText ? `<span>🏫 ${escapeHtml(areaText)}</span>` : ''}
+                        ${distText ? `<span>📏 ${distText}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1082,6 +1176,7 @@
         selectedImagePaths = [];
         updateImagePreview();
         updateAreaPreview();
+        map.closePopup(); // 新增模式下点击校区色块不应停留汇总弹窗
         document.getElementById('modal').style.display = 'flex';
         isAdding = false;
         document.getElementById('map').style.cursor = '';
@@ -1186,6 +1281,8 @@
     function filterList() {
         const query = document.getElementById('list-search-input').value.trim().toLowerCase();
         const mineOnly = document.getElementById('filter-mine-only').checked;
+        const byDistance = document.getElementById('distance-sort').checked;
+        const clusterMode = document.getElementById('cluster-mode').checked;
         // const sortOrder = document.getElementById('sort-order').value; // Removed
         const dateStart = document.getElementById('date-start').value;
         const dateEnd = document.getElementById('date-end').value;
@@ -1227,14 +1324,35 @@
             return matchQuery && matchMine && matchDate;
         });
 
+        // 校园筛选 + 附近筛选
+        const areaFilter = document.getElementById('area-filter').value;
+        const maxDist = parseInt(document.getElementById('distance-filter').value, 10) || 0;
+        filtered = filtered.filter(r => matchAreaFilter(r, areaFilter) && matchDistanceFilter(r, maxDist));
+
+        // Chip active states
+        document.getElementById('distance-sort-chip').classList.toggle('active', byDistance);
+        document.getElementById('cluster-chip').classList.toggle('active', clusterMode);
+
+        // 猫点聚合：以聚簇卡片展示（下钻状态优先）
+        if (currentCluster) {
+            renderClusterBackChip();
+            renderList(currentCluster.members);
+            return;
+        }
+        if (clusterMode) {
+            renderClusters(clusterRecords(filtered, 50, r => ({ lat: r.lat, lng: r.lng })));
+            return;
+        }
+        document.getElementById('list-content').querySelector('.cluster-back')?.remove();
+
         // Sort (Default to Newest)
         filtered.sort((a, b) => {
             // Use created_at if available, otherwise fallback to id (assuming id is timestamp for local records)
             // For Supabase records, id is int, created_at is string.
             // We need to be careful.
-            
+
             let timeA, timeB;
-            
+
             if (a.created_at) timeA = new Date(a.created_at).getTime();
             else timeA = typeof a.id === 'number' && a.id > 1000000000000 ? a.id : 0; // Heuristic for timestamp ID
 
@@ -1247,7 +1365,107 @@
             return timeB - timeA; // Always Newest First
         });
 
-        renderList(filtered);
+        if (byDistance) {
+            const center = map.getCenter();
+            filtered.sort((a, b) => recordDistance(a, center) - recordDistance(b, center));
+        }
+
+        renderList(filtered, byDistance ? map.getCenter() : null);
+    }
+
+    // 任何筛选条件变化都退出猫点下钻，避免看到过期列表
+    function onFilterChanged() {
+        currentCluster = null;
+        filterList();
+    }
+
+    // 校园筛选：选项为“高校·校区”或高校名（前缀匹配），'__outside__' 代表校外
+    function matchAreaFilter(record, value) {
+        if (!value) return true;
+        const area = areaTextOf(record);
+        if (value === '__outside__') return !area;
+        return !!area && (area === value || area.startsWith(value + '·'));
+    }
+
+    // 记录与地图视野中心的距离（米）；无法定位返回 Infinity 永远排在最后
+    function recordDistance(record, center) {
+        if (!Number.isFinite(record.lat) || !Number.isFinite(record.lng)) return Infinity;
+        return haversineMeters(record.lat, record.lng, center.lat, center.lng);
+    }
+
+    function matchDistanceFilter(record, maxDist) {
+        if (!maxDist) return true;
+        return recordDistance(record, map.getCenter()) <= maxDist;
+    }
+
+    function fmtDistance(meters) {
+        if (!Number.isFinite(meters)) return '';
+        return meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${Math.round(meters)}m`;
+    }
+
+    // 填充校园筛选下拉：华工各校区单独列出，其他高校按校名聚合
+    function populateAreaFilter() {
+        const select = document.getElementById('area-filter');
+        select.innerHTML = '<option value="">全部区域</option><option value="__outside__">校外</option>';
+        for (const opt of campusOptions(areasData)) {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            select.appendChild(option);
+        }
+    }
+
+    // 猫点聚簇卡片
+    function renderClusters(clusters) {
+        const container = document.getElementById('list-content');
+        container.querySelector('.cluster-back')?.remove();
+        container.innerHTML = '';
+
+        const positioned = clusters.filter(c => c.center);
+        const unpositioned = clusters.filter(c => !c.center);
+        positioned.sort((a, b) => {
+            const ta = parseRecordTime(a.seed) || 0;
+            const tb = parseRecordTime(b.seed) || 0;
+            return tb - ta;
+        });
+        for (const cluster of [...positioned, ...unpositioned]) {
+            const card = document.createElement('div');
+            card.className = 'record-card';
+            const newest = cluster.seed;
+            const areaText = areaTextOf(newest);
+            card.innerHTML = `
+                <div style="width:80px;height:80px;background:#fdeee6;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:26px;">🍪</div>
+                <div class="record-card-info">
+                    <div class="record-card-title">${escapeHtml(newest.title || '未命名位置')}</div>
+                    <div class="record-card-desc">${escapeHtml(newest.desc || '暂无描述')}</div>
+                    <div class="record-card-meta">
+                        <span style="color:#df7d5c;font-weight:700;">📍 ${cluster.members.length} 条记录</span>
+                        ${areaText ? `<span>🏫 ${escapeHtml(areaText)}</span>` : ''}
+                        ${cluster.center ? `<span>📏 ${fmtDistance(recordDistance(newest, map.getCenter()))}</span>` : ''}
+                    </div>
+                </div>
+            `;
+            card.onclick = () => {
+                currentCluster = cluster;
+                filterList();
+            };
+            container.appendChild(card);
+        }
+    }
+
+    // 下钻状态的返回条
+    function renderClusterBackChip() {
+        const container = document.getElementById('list-content');
+        let chip = container.querySelector('.cluster-back');
+        if (chip) return;
+        chip = document.createElement('div');
+        chip.className = 'cluster-back';
+        chip.innerHTML = '← 返回全部位置';
+        chip.onclick = () => {
+            currentCluster = null;
+            filterList();
+        };
+        container.prepend(chip);
     }
     
     // Locate Record from Detail
@@ -1294,6 +1512,7 @@
 
     renderCampusLayer();
     campusLayer.addTo(map);
+    populateAreaFilter();
 
     loadMapRecords();
 </script>

@@ -57,6 +57,8 @@
 <script>
   const { ipcRenderer } = require('electron')
   const { escapeHtml } = require('../../backend/utils')
+  const { loadAreasData, campusOptions } = require('../../backend/areas')
+  const areasData = loadAreasData()
   let records = []
   let cats = []
 
@@ -87,7 +89,7 @@
       const tr = document.createElement('tr')
       const idAttr = r.id ? `data-id="${escapeHtml(r.id)}"` : '';
       tr.innerHTML = `
-            <td>${escapeHtml(r.time)}</td>
+            <td>${escapeHtml(r.time)}${r.area ? `<div style="font-size:11px;color:#8f7166;margin-top:2px;">🏫 ${escapeHtml(r.area)}</div>` : ''}</td>
             <td>${escapeHtml(r.location)}</td>
             <td>${escapeHtml(r.count)}</td>
             <td>${escapeHtml(r.species)}</td>
@@ -131,14 +133,15 @@
     })
   }
 
-  // 搜索功能
+  // 搜索功能（覆盖时间、地点、品种、校园区域）
   const searchInput = document.getElementById('search')
   searchInput.addEventListener('input', () => {
     const query = searchInput.value.toLowerCase()
     const filtered = records.filter(r =>
             String(r.time || '').toLowerCase().includes(query) ||
             String(r.location || '').toLowerCase().includes(query) ||
-            String(r.species || '').toLowerCase().includes(query)
+            String(r.species || '').toLowerCase().includes(query) ||
+            String(r.area || '').toLowerCase().includes(query)
     )
     displayRecords(filtered)
   })
@@ -170,6 +173,11 @@
                          <option value="">未关联</option>
                      </select>
                  </label>
+                 <label>所在校园:
+                     <select id="edit-area" style="width:100%;margin-bottom:10px;">
+                         <option value="">不设置</option>
+                     </select>
+                 </label>
                 <div style="text-align:right;">
                     <button onclick="closeEditModal()">取消</button>
                     <button onclick="saveEdit()" style="background:#df7d5c;color:white;">保存</button>
@@ -194,6 +202,11 @@
       catSelect.innerHTML = '<option value="">未关联</option>' +
           cats.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')
       catSelect.value = record.cat_id ?? ''
+
+      const areaSelect = document.getElementById('edit-area')
+      areaSelect.innerHTML = '<option value="">不设置</option>' +
+          campusOptions(areasData).map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('')
+      areaSelect.value = record.area || ''
 
       modal.style.display = 'flex'
   }

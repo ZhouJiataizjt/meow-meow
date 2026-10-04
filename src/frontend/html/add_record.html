@@ -50,6 +50,9 @@
             <label>关联猫咪档案：
                 <select id="cat_id"></select>
             </label>
+            <label>所在校园（可选）：
+                <select id="area"></select>
+            </label>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
                 <button type="button" id="ai-recognize-btn" style="flex:1; background:#6c5ce7;">📷 拍照识别品种</button>
             </div>
@@ -60,6 +63,8 @@
 
 <script>
     const { ipcRenderer } = require('electron')
+    const { parseRecordTime } = require('../../backend/utils')
+    const { loadAreasData, campusOptions } = require('../../backend/areas')
 
     // 档案下拉框：可把这条记录归到某只常驻猫咪名下
     async function loadCatOptions() {
@@ -73,6 +78,22 @@
         }
     }
     loadCatOptions()
+
+    // 所在校园下拉：默认带出最近一次地图打卡的校园
+    async function loadAreaOptions() {
+        const select = document.getElementById('area')
+        const options = campusOptions(loadAreasData())
+        select.innerHTML = '<option value="">不设置</option>' +
+            options.map(o => `<option value="${o.value.replace(/"/g, '&quot;')}">${o.label.replace(/</g, '&lt;').replace(/&/g, '&amp;')}</option>`).join('')
+        try {
+            const mapRecords = (await ipcRenderer.invoke('get_map_records')) || []
+            const latestWithArea = mapRecords
+                .filter(r => r.area)
+                .sort((a, b) => parseRecordTime(b) - parseRecordTime(a))[0]
+            if (latestWithArea) select.value = latestWithArea.area
+        } catch (e) { /* 默认值获取失败不影响新增 */ }
+    }
+    loadAreaOptions()
 
     // AI 识别：选择一张猫咪照片，由多模态大模型识别品种并回填表单
     document.getElementById('ai-recognize-btn').addEventListener('click', async () => {
@@ -103,7 +124,8 @@
             count: document.getElementById('count').value,
             species: document.getElementById('species').value,
             gender: document.getElementById('gender').value,
-            cat_id: document.getElementById('cat_id').value || null
+            cat_id: document.getElementById('cat_id').value || null,
+            area: document.getElementById('area').value || ''
         }
         try {
             await ipcRenderer.invoke('add_record', newRecord)

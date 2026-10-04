@@ -339,6 +339,36 @@ ipcMain.handle('open_records', async()=>{
     recordsWin.on('close', () => recordsWin = null)
 })
 
+// ==========================================
+// 图片本地化：添加/编辑本地记录时把图片拷贝进应用数据目录，
+// 原图移动、改名或删除后记录不再裂图。已在 images 目录下的路径原样保留
+// ==========================================
+const IMAGES_DIR = path.join(app.getPath('userData'), 'images')
+
+function localizeImageIfNeeded(imgPath) {
+    try {
+        if (!imgPath || typeof imgPath !== 'string' || !fs.existsSync(imgPath)) return imgPath
+        if (path.resolve(imgPath).startsWith(path.resolve(IMAGES_DIR))) return imgPath
+        if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true })
+        const dest = path.join(IMAGES_DIR, `${Date.now()}_${Math.random().toString(36).substring(2, 8)}_${path.basename(imgPath)}`)
+        fs.copyFileSync(imgPath, dest)
+        return dest
+    } catch (e) {
+        console.error('图片本地化失败:', e)
+        return imgPath
+    }
+}
+
+function localizeRecordImages(record) {
+    if (Array.isArray(record.images)) {
+        record.images = record.images.map(localizeImageIfNeeded)
+    }
+    if (record.image) {
+        record.image = localizeImageIfNeeded(record.image)
+    }
+    return record
+}
+
 // Helper for Supabase retries
 async function supabaseWithRetry(operation, maxRetries = 3) {
     let lastError;
@@ -579,7 +609,7 @@ ipcMain.handle('add_map_record', async (event, record) => {
         if (fs.existsSync(MAP_RECORDS_FILE)) {
             records = JSON.parse(fs.readFileSync(MAP_RECORDS_FILE, 'utf-8'))
         }
-        records.push(record)
+        records.push(localizeRecordImages(record))
         fs.writeFileSync(MAP_RECORDS_FILE, JSON.stringify(records, null, 2), 'utf-8')
         return true
     }
@@ -908,7 +938,7 @@ ipcMain.handle('update_map_record', async (event, { id, index, record }) => {
         const records = JSON.parse(fs.readFileSync(MAP_RECORDS_FILE, 'utf-8'));
         const recordIndex = findRecordIndex(records, { index, id });
         if (recordIndex < 0) return false;
-        records[recordIndex] = { ...records[recordIndex], ...record };
+        records[recordIndex] = { ...records[recordIndex], ...localizeRecordImages(record) };
         fs.writeFileSync(MAP_RECORDS_FILE, JSON.stringify(records, null, 2), 'utf-8');
         return true;
     }

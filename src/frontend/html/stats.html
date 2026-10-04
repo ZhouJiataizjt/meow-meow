@@ -87,6 +87,11 @@
             <h3>校园分布 Top 5</h3>
             <div id="top-areas"></div>
         </div>
+
+        <div class="stats-section">
+            <h3>猫咪出没时段</h3>
+            <div id="time-buckets"></div>
+        </div>
     </div>
 
 <script>
@@ -154,6 +159,13 @@
         renderBars('top-locations', stats.topLocations, stats.topLocations[0]?.count)
         renderBars('top-species', stats.topSpecies, stats.topSpecies[0]?.count)
         renderBars('top-areas', stats.topAreas, stats.topAreas[0]?.count)
+
+        const totalBuckets = stats.timeBuckets.reduce((s, b) => s + b.count, 0)
+        if (totalBuckets === 0) {
+            document.getElementById('time-buckets').innerHTML = '<div class="empty-tip">记录里还没有带时间的数据。</div>'
+        } else {
+            renderBars('time-buckets', stats.timeBuckets, Math.max(...stats.timeBuckets.map(b => b.count)))
+        }
     }
 
     loadStats()

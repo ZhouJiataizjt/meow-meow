@@ -67,6 +67,50 @@ function parseCatCount(value) {
     return Number.isFinite(n) && n > 0 ? n : 1
 }
 
+// 猫点聚合：把 radiusMeters 范围内聚集的打卡归为一个位置簇。
+// records 需先按时间倒序（簇的 seed 即最新一条）；无法定位的记录自成一组排在尾部。
+function clusterRecords(records, radiusMeters, getCoords) {
+    const clusters = []
+    for (const record of records || []) {
+        const coords = getCoords ? getCoords(record) : null
+        if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+            clusters.push({ seed: record, members: [record], center: null })
+            continue
+        }
+        let target = null
+        for (const cluster of clusters) {
+            if (!cluster.center) continue
+            if (haversineMeters(coords.lat, coords.lng, cluster.center.lat, cluster.center.lng) <= radiusMeters) {
+                target = cluster
+                break
+            }
+        }
+        if (target) {
+            target.members.push(record)
+        } else {
+            clusters.push({ seed: record, members: [record], center: { lat: coords.lat, lng: coords.lng } })
+        }
+    }
+    return clusters
+}
+
+// 猫咪出没时段划分（按记录时间的小时数）
+const TIME_BUCKETS = [
+    { label: '清晨 5-9点', from: 5, to: 8 },
+    { label: '上午 9-12点', from: 9, to: 11 },
+    { label: '午后 12-15点', from: 12, to: 14 },
+    { label: '傍晚 15-19点', from: 15, to: 18 },
+    { label: '夜间 19-5点', from: 19, to: 4 }
+]
+
+function bucketIndexForHour(hour) {
+    for (let i = 0; i < TIME_BUCKETS.length; i++) {
+        const { from, to } = TIME_BUCKETS[i]
+        if (from <= to ? (hour >= from && hour <= to) : (hour >= from || hour <= to)) return i
+    }
+    return -1
+}
+
 function topN(countMap, n) {
     return Object.entries(countMap)
         .map(([name, count]) => ({ name, count }))
@@ -87,6 +131,7 @@ function computeStats(records = [], mapRecords = [], cats = [], now = new Date()
     const speciesCount = {}
     const areaCount = {}
     const monthlyCount = {}
+    const bucketCounts = new Array(TIME_BUCKETS.length).fill(0)
 
     for (const record of all) {
         const count = parseCatCount(record.count)
@@ -98,6 +143,8 @@ function computeStats(records = [], mapRecords = [], cats = [], now = new Date()
             const d = new Date(t)
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
             monthlyCount[key] = (monthlyCount[key] || 0) + 1
+            const bucketIndex = bucketIndexForHour(d.getHours())
+            if (bucketIndex >= 0) bucketCounts[bucketIndex]++
         }
 
         const location = String(record.location || record.title || '').trim()
@@ -130,6 +177,7 @@ function computeStats(records = [], mapRecords = [], cats = [], now = new Date()
         topLocations: topN(locationCount, 5),
         topSpecies: topN(speciesCount, 5),
         topAreas: topN(areaCount, 5),
+        timeBuckets: TIME_BUCKETS.map((bucket, index) => ({ name: bucket.label, count: bucketCounts[index] })),
         monthly
     }
 }
@@ -295,5 +343,8 @@ module.exports = {
     formatArea,
     polygonsOf,
     ringAreaMeters2,
-    mainRingOf
+    mainRingOf,
+    clusterRecords,
+    TIME_BUCKETS,
+    bucketIndexForHour
 }

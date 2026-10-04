@@ -291,3 +291,69 @@ test('坐标系一致性：WGS84 判定结果转 GCJ02 后必须完全一致', (
     assert.ok(verified >= 5, `应有足够多有效采样点（实际 ${verified}）`)
     assert.ok(scutVerified >= 3, `应有足够多命中华工的采样点（实际 ${scutVerified}）`)
 })
+
+// ---------- 猫点聚合 ----------
+
+const { clusterRecords } = require('../src/backend/utils')
+
+test('clusterRecords 50 米内的打卡聚为一簇', () => {
+    // 纬度 0.00009 度 ≈ 10 米
+    const mk = (id, lat, lng) => ({ id, lat, lng })
+    const records = [
+        mk(1, 23.0500, 113.3900),
+        mk(2, 23.05009, 113.3900), // 距 1 约 10m，同簇
+        mk(3, 23.05040, 113.3900), // 距 1 约 44m，同簇
+        mk(4, 23.0510, 113.3900),  // 距 1 约 110m，新簇
+        mk(5, 23.05009, 113.3900)  // 距 1 约 10m，但应聚到更近的已有簇（首个匹配）
+    ]
+    const clusters = clusterRecords(records, 50, r => ({ lat: r.lat, lng: r.lng }))
+    assert.strictEqual(clusters.length, 2)
+    assert.strictEqual(clusters[0].members.length, 4)
+    assert.strictEqual(clusters[1].members.length, 1)
+    assert.strictEqual(clusters[0].seed, records[0])
+})
+
+test('clusterRecords 无法定位的记录自成一组', () => {
+    const clusters = clusterRecords([
+        { id: 1, lat: 23.0, lng: 113.0 },
+        { id: 2 }, // 无坐标
+        { id: 3, lat: 'bad', lng: null } // 非法坐标
+    ], 50, r => ({ lat: r.lat, lng: r.lng }))
+    assert.strictEqual(clusters.length, 3)
+    assert.strictEqual(clusters[1].center, null)
+    assert.strictEqual(clusters[2].center, null)
+})
+
+test('clusterRecords 空输入与缺省 getCoords', () => {
+    assert.deepStrictEqual(clusterRecords([], 50, r => r), [])
+    assert.strictEqual(clusterRecords([{ id: 1 }], 50).length, 1) // 无 getCoords 全部自成一簇
+})
+
+// ---------- 出没时段分布 ----------
+
+test('computeStats 输出时段分布且分桶正确', () => {
+    const records = [
+        { time: '2026-06-01T06:30' },  // 清晨
+        { time: '2026-06-02T10:00' },  // 上午
+        { time: '2026-06-03T21:15' },  // 夜间
+        { time: '2026-06-04T02:00' },  // 夜间（跨零点）
+        { time: '2026-06-05T16:00' },  // 傍晚
+        { id: 1780275600000 }          // 时间戳记录（约 2026-06-01 11:00 UTC → 本地时区可能跨桶）
+    ]
+    const stats = computeStats(records, [], [])
+    assert.strictEqual(stats.timeBuckets.length, 5)
+    const byName = Object.fromEntries(stats.timeBuckets.map(b => [b.name, b.count]))
+    assert.strictEqual(byName['清晨 5-9点'], 1)
+    assert.strictEqual(byName['上午 9-12点'], 2) // 含时间戳记录（北京时间上午）
+    assert.strictEqual(byName['傍晚 15-19点'], 1)
+    assert.strictEqual(byName['夜间 19-5点'], 2)
+    const total = stats.timeBuckets.reduce((s, b) => s + b.count, 0)
+    assert.strictEqual(total, 6)
+})
+
+test('bucketIndexForHour 覆盖全天 24 小时', () => {
+    const { bucketIndexForHour } = require('../src/backend/utils')
+    for (let h = 0; h < 24; h++) {
+        assert.ok(bucketIndexForHour(h) >= 0, `小时 ${h} 应落在某个时段`)
+    }
+})

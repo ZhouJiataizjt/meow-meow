@@ -34,4 +34,25 @@ function loadAreasData() {
     }
 }
 
-module.exports = { loadAreasData }
+// 生成"所在校园"下拉选项：华工各校区单独列出并带全校选项，其他高校按校名聚合
+function campusOptions(areasData) {
+    const options = []
+    for (const uni of areasData && areasData.universities || []) {
+        const campuses = uni.campuses || []
+        if (uni.name === '华南理工大学') {
+            for (const campus of campuses) {
+                options.push({ value: `${uni.name}·${campus.name}`, label: `${uni.name}·${campus.name}` })
+            }
+        } else if (campuses.length > 1) {
+            options.push({ value: uni.name, label: `${uni.name}（全部校区）` })
+            for (const campus of campuses) {
+                options.push({ value: `${uni.name}·${campus.name}`, label: `　└ ${campus.name}` })
+            }
+        } else if (campuses.length === 1) {
+            options.push({ value: uni.name, label: uni.name })
+        }
+    }
+    return options
+}
+
+module.exports = { loadAreasData, campusOptions }
