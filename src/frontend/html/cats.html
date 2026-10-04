@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>猫咪档案</title>
+    <link rel="stylesheet" href="../css/common.css">
+    <style>
+        .cats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .cats-header h2 { margin: 0; }
+
+        .cat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 16px;
+        }
+
+        .cat-card {
+            background: var(--card-bg);
+            border: 1px solid #eee3da;
+            border-radius: 14px;
+            padding: 18px;
+            cursor: pointer;
+            transition: transform .2s ease, box-shadow .2s ease;
+        }
+        .cat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--hover-shadow);
+        }
+        .cat-card-avatar {
+            width: 52px;
+            height: 52px;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            font-size: 26px;
+            background: #ffe3d6;
+            margin-bottom: 10px;
+        }
+        .cat-card-name { font-size: 16px; font-weight: 700; color: var(--primary-color); }
+        .cat-card-species { margin-top: 3px; color: var(--text-color); font-size: 13px; }
+        .cat-card-meta { margin-top: 10px; color: #8c7b71; font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+        .empty-tip {
+            color: #8c7b71;
+            font-size: 14px;
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        /* 弹窗 */
+        .modal-mask {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(51, 41, 35, .45);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-box {
+            background: white;
+            border-radius: 14px;
+            padding: 24px;
+            width: 480px;
+            max-width: 92vw;
+            max-height: 86vh;
+            overflow-y: auto;
+            box-shadow: var(--hover-shadow);
+        }
+        .modal-box h3 { text-align: left; margin-bottom: 14px; }
+        .modal-actions { text-align: right; margin-top: 14px; }
+        .modal-actions button { margin-left: 8px; }
+        .btn-danger { background: #c0392b; }
+        .btn-plain { background: #95a5a6; }
+
+        .timeline { margin-top: 8px; }
+        .timeline-item {
+            display: flex;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px dashed #eee3da;
+            font-size: 13px;
+        }
+        .timeline-item:last-child { border-bottom: none; }
+        .timeline-date { flex: 0 0 108px; color: #8c7b71; }
+        .timeline-body { flex: 1; min-width: 0; }
+        .timeline-title { font-weight: 600; }
+        .timeline-note { color: #6f5e54; margin-top: 2px; }
+        .timeline-badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 1px 8px;
+            border-radius: 10px;
+            background: #fff0e9;
+            color: #b85538;
+            margin-left: 6px;
+        }
+
+        .cat-info-row { font-size: 13px; margin: 6px 0; color: #4a3b33; }
+        .cat-info-row b { color: var(--primary-color); }
+    </style>
+</head>
+<body>
+    <div class="container" style="max-width: 100%;">
+        <div class="cats-header">
+            <h2>🐈 猫咪档案</h2>
+            <button onclick="openCatForm()">＋ 新建档案</button>
+        </div>
+        <div id="cat-grid" class="cat-grid"></div>
+        <div id="empty-tip" class="empty-tip" style="display:none;">
+            还没有猫咪档案。给常驻的那只猫建一个档案吧，之后的每次相遇都会记录在这里。
+        </div>
+    </div>
+
+    <!-- 新建/编辑档案 -->
+    <div class="modal-mask" id="cat-form-mask">
+        <div class="modal-box">
+            <h3 id="cat-form-title">新建猫咪档案</h3>
+            <input type="hidden" id="cat-form-id">
+            <label>名字：<input type="text" id="cat-form-name" placeholder="例如：大橘"></label>
+            <label>品种/花色：<input type="text" id="cat-form-species" placeholder="例如：橘猫"></label>
+            <label>外貌特征：<input type="text" id="cat-form-features" placeholder="例如：右耳缺角、脖子上有点白毛"></label>
+            <label>备注：<textarea id="cat-form-notes" rows="3" placeholder="性格、喜好的食物、常出没位置……"></textarea></label>
+            <div class="modal-actions">
+                <button class="btn-plain" onclick="closeCatForm()">取消</button>
+                <button onclick="saveCat()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 档案详情 + 相遇时间线 -->
+    <div class="modal-mask" id="cat-detail-mask">
+        <div class="modal-box">
+            <h3 id="detail-name"></h3>
+            <div id="detail-info"></div>
+            <div style="margin-top:14px; font-weight:700; color:var(--primary-color);">相遇时间线</div>
+            <div id="detail-timeline" class="timeline"></div>
+            <div class="modal-actions">
+                <button class="btn-danger" onclick="deleteCat()">删除档案</button>
+                <button class="btn-plain" onclick="closeCatDetail()">关闭</button>
+                <button onclick="editCurrentCat()">编辑</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const { ipcRenderer } = require('electron')
+    const { escapeHtml, parseRecordTime } = require('../../backend/utils')
+
+    const AVATAR_COLORS = ['#ffe3d6', '#fff0c9', '#dff0e2', '#e3ecfb', '#f7e2f0', '#e8e4f9']
+    let cats = []
+    let records = []
+    let mapRecords = []
+    let currentCatId = null
+
+    function avatarColorOf(cat) {
+        const name = String(cat.name || '')
+        let hash = 0
+        for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+        return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+    }
+
+    async function loadAll() {
+        cats = (await ipcRenderer.invoke('get_cats')) || []
+        records = (await ipcRenderer.invoke('get_records')) || []
+        mapRecords = (await ipcRenderer.invoke('get_map_records')) || []
+        renderGrid()
+    }
+
+    function sightingsOf(catId) {
+        const items = []
+        for (const r of records) {
+            if (String(r.cat_id ?? '') !== String(catId)) continue
+            items.push({
+                time: parseRecordTime(r),
+                title: `${r.location || '未知地点'}（${r.species || '未知品种'} × ${r.count || 1}）`,
+                note: r.gender || '',
+                badge: '观察记录'
+            })
+        }
+        for (const r of mapRecords) {
+            if (String(r.cat_id ?? '') !== String(catId)) continue
+            items.push({
+                time: parseRecordTime(r),
+                title: r.title || '地图打卡',
+                note: r.desc || '',
+                badge: '地图打卡'
+            })
+        }
+        return items.sort((a, b) => b.time - a.time)
+    }
+
+    function renderGrid() {
+        const grid = document.getElementById('cat-grid')
+        const tip = document.getElementById('empty-tip')
+        grid.innerHTML = ''
+        tip.style.display = cats.length === 0 ? 'block' : 'none'
+
+        cats.forEach(cat => {
+            const sightings = sightingsOf(cat.id)
+            const lastTime = sightings.length > 0 && sightings[0].time > 0
+                ? new Date(sightings[0].time).toLocaleDateString()
+                : null
+            const card = document.createElement('div')
+            card.className = 'cat-card'
+            card.onclick = () => showCatDetail(cat.id)
+            card.innerHTML = `
+                <div class="cat-card-avatar" style="background:${avatarColorOf(cat)};">🐈</div>
+                <div class="cat-card-name">${escapeHtml(cat.name)}</div>
+                <div class="cat-card-species">${escapeHtml(cat.species || '未知品种')}</div>
+                <div class="cat-card-meta">
+                    <span>相遇 ${sightings.length} 次</span>
+                    ${lastTime ? `<span>最近：${escapeHtml(lastTime)}</span>` : ''}
+                </div>
+            `
+            grid.appendChild(card)
+        })
+    }
+
+    function showCatDetail(catId) {
+        const cat = cats.find(c => String(c.id) === String(catId))
+        if (!cat) return
+        currentCatId = cat.id
+
+        document.getElementById('detail-name').textContent = cat.name
+        const sightings = sightingsOf(cat.id)
+        const infoHtml = `
+            <div class="cat-info-row"><b>品种/花色：</b>${escapeHtml(cat.species || '未知')}</div>
+            <div class="cat-info-row"><b>外貌特征：</b>${escapeHtml(cat.features || '暂无记录')}</div>
+            <div class="cat-info-row"><b>备注：</b>${escapeHtml(cat.notes || '暂无')}</div>
+        `
+        document.getElementById('detail-info').innerHTML = infoHtml
+
+        const timeline = document.getElementById('detail-timeline')
+        if (sightings.length === 0) {
+            timeline.innerHTML = '<div class="empty-tip" style="padding:16px 0;">还没有关联的相遇记录。在“添加记录”或地图打卡时选择关联这个档案即可。</div>'
+        } else {
+            timeline.innerHTML = sightings.map(s => {
+                const dateStr = s.time > 0 ? new Date(s.time).toLocaleString() : '时间未知'
+                return `
+                    <div class="timeline-item">
+                        <div class="timeline-date">${escapeHtml(dateStr)}</div>
+                        <div class="timeline-body">
+                            <div class="timeline-title">${escapeHtml(s.title)}<span class="timeline-badge">${s.badge}</span></div>
+                            ${s.note ? `<div class="timeline-note">${escapeHtml(s.note)}</div>` : ''}
+                        </div>
+                    </div>
+                `
+            }).join('')
+        }
+        document.getElementById('cat-detail-mask').style.display = 'flex'
+    }
+
+    function closeCatDetail() {
+        document.getElementById('cat-detail-mask').style.display = 'none'
+        currentCatId = null
+    }
+
+    function openCatForm(cat) {
+        document.getElementById('cat-form-title').textContent = cat ? '编辑猫咪档案' : '新建猫咪档案'
+        document.getElementById('cat-form-id').value = cat ? cat.id : ''
+        document.getElementById('cat-form-name').value = cat ? (cat.name || '') : ''
+        document.getElementById('cat-form-species').value = cat ? (cat.species || '') : ''
+        document.getElementById('cat-form-features').value = cat ? (cat.features || '') : ''
+        document.getElementById('cat-form-notes').value = cat ? (cat.notes || '') : ''
+        document.getElementById('cat-form-mask').style.display = 'flex'
+    }
+
+    function closeCatForm() {
+        document.getElementById('cat-form-mask').style.display = 'none'
+    }
+
+    function editCurrentCat() {
+        const cat = cats.find(c => String(c.id) === String(currentCatId))
+        if (!cat) return
+        closeCatDetail()
+        openCatForm(cat)
+    }
+
+    async function saveCat() {
+        const name = document.getElementById('cat-form-name').value.trim()
+        if (!name) {
+            alert('请给猫咪起个名字')
+            return
+        }
+        const cat = {
+            name,
+            species: document.getElementById('cat-form-species').value.trim(),
+            features: document.getElementById('cat-form-features').value.trim(),
+            notes: document.getElementById('cat-form-notes').value.trim()
+        }
+        const id = document.getElementById('cat-form-id').value
+        try {
+            if (id) {
+                await ipcRenderer.invoke('update_cat', { id, cat })
+            } else {
+                await ipcRenderer.invoke('add_cat', cat)
+            }
+            closeCatForm()
+            loadAll()
+        } catch (e) {
+            alert('保存失败：' + e.message)
+        }
+    }
+
+    async function deleteCat() {
+        if (!currentCatId) return
+        if (!confirm('确定删除这个档案吗？观察记录本身不会被删除，只会解除关联。')) return
+        try {
+            await ipcRenderer.invoke('delete_cat', currentCatId)
+            closeCatDetail()
+            loadAll()
+        } catch (e) {
+            alert('删除失败：' + e.message)
+        }
+    }
+
+    loadAll()
+    window.addEventListener('focus', loadAll)
+</script>
+</body>
+</html>

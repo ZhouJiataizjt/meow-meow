@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>喵喵地图</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="../vendor/leaflet.css" />
     <link rel="stylesheet" href="../css/common.css">
     <style>
         /* Override common.css for full screen map */
@@ -99,6 +99,55 @@
             border: none;
         }
         #list-btn:hover { background: #f9f9f9; }
+
+        /* Heatmap toggle button */
+        #heat-btn {
+            position: absolute;
+            top: 64px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            cursor: pointer;
+            font-weight: bold;
+            color: #2c3e50;
+            border: none;
+            font-size: 13px;
+        }
+        #heat-btn.active {
+            background: #df7d5c;
+            color: white;
+        }
+
+        /* Offline notice overlay */
+        #offline-notice {
+            display: none;
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1200;
+            background: #fff8e1;
+            border: 1px solid #f0d47a;
+            color: #7a5c00;
+            padding: 10px 18px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            font-size: 13px;
+            align-items: center;
+            gap: 10px;
+            max-width: 80%;
+        }
+        #offline-notice button {
+            background: transparent;
+            color: #7a5c00;
+            border: 1px solid #d4b95e;
+            padding: 2px 10px;
+            font-size: 12px;
+            min-height: 24px;
+        }
 
         /* Records List Overlay */
         #records-list-container {
@@ -407,6 +456,12 @@
 <body>
 
 <button id="list-btn" onclick="showRecordsList()">📋 猫咪记录</button>
+<button id="heat-btn" onclick="toggleHeatmap()" title="切换热力图">🔥 热力图</button>
+
+<div id="offline-notice">
+    <span>地图瓦片加载失败：地图底图需要联网，但你的记录数据仍在本地可用。</span>
+    <button onclick="document.getElementById('offline-notice').style.display='none'">知道了</button>
+</div>
 
 <div id="records-list-container">
     <div class="list-header">
@@ -510,114 +565,23 @@
     <img src="">
 </div>
 
-<script>
-    // ... existing code ...
-    
-    async function deleteMapRecord() {
-        if (!currentDetailRecord) return;
-        if (!confirm('确定要删除这条记录吗？')) return;
-        
-        try {
-            // Find index in allRecords
-            const index = allRecords.findIndex(r => r.id === currentDetailRecord.id);
-            await ipcRenderer.invoke('delete_map_record', { 
-                id: currentDetailRecord.id, 
-                index: index 
-            });
-            
-            closeDetailModal();
-            loadMapRecords(); // Reload all
-        } catch (e) {
-            alert('删除失败: ' + e.message);
-        }
-    }
-
-    function editMapRecord() {
-        if (!currentDetailRecord) return;
-        closeDetailModal();
-        
-        // Reuse the add modal for editing
-        // We need to store the editing ID
-        document.getElementById('modal').dataset.editId = currentDetailRecord.id;
-        document.getElementById('modal').dataset.editIndex = allRecords.findIndex(r => r.id === currentDetailRecord.id);
-        
-        document.getElementById('record-title').value = currentDetailRecord.title;
-        document.getElementById('record-desc').value = currentDetailRecord.desc || '';
-        document.getElementById('record-img').value = currentDetailRecord.image || '';
-        
-        // We can't easily change lat/lng in this simple modal without clicking map
-        // So we assume location is fixed for now, or we could let them click map to update
-        // For simplicity, let's keep location same unless they click map?
-        // Actually, the add modal relies on `currentLatLng`.
-        currentLatLng = { lat: currentDetailRecord.lat, lng: currentDetailRecord.lng };
-        
-        document.getElementById('modal').style.display = 'flex';
-    }
-    
-    // Override saveRecord to handle edit
-    const originalSaveRecord = saveRecord;
-    saveRecord = async function() {
-        const editId = document.getElementById('modal').dataset.editId;
-        if (!editId) {
-            return originalSaveRecord();
-        }
-        
-        // Edit mode
-        const title = document.getElementById('record-title').value;
-        const desc = document.getElementById('record-desc').value;
-        const img = document.getElementById('record-img').value;
-
-        if (!title) {
-            alert('请输入标题');
-            return;
-        }
-
-        const record = {
-            lat: currentLatLng.lat,
-            lng: currentLatLng.lng,
-            title: title,
-            desc: desc,
-            image: img
-        };
-
-        try {
-            await ipcRenderer.invoke('update_map_record', {
-                id: editId,
-                index: parseInt(document.getElementById('modal').dataset.editIndex),
-                record: record
-            });
-            
-            closeModal();
-            loadMapRecords();
-            
-            // Clear edit state
-            delete document.getElementById('modal').dataset.editId;
-            delete document.getElementById('modal').dataset.editIndex;
-        } catch (err) {
-            console.error(err);
-            alert('更新失败：' + err.message);
-        }
-    }
-    
-    // Override closeModal to clear edit state
-    const originalCloseModal = closeModal;
-    closeModal = function() {
-        delete document.getElementById('modal').dataset.editId;
-        delete document.getElementById('modal').dataset.editIndex;
-        originalCloseModal();
-    }
-</script>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="../vendor/leaflet.js"></script>
+<script src="../vendor/leaflet-heat.js"></script>
 <script>
     const { ipcRenderer } = require('electron');
-    
+    const { escapeHtml, safeResourceUrl } = require('../../backend/utils');
+
     // 初始化地图 (默认显示广州)
     const map = L.map('map').setView([23.1291, 113.2644], 11);
 
-    // 使用 高德地图 瓦片图层
+    // 使用 高德地图 瓦片图层（离线时通过 tileerror 给出提示，记录数据不受影响）
+    let offlineNoticeShown = false
     L.tileLayer('https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
         attribution: '&copy; 高德地图'
+    }).on('tileerror', () => {
+        if (offlineNoticeShown) return
+        offlineNoticeShown = true
+        document.getElementById('offline-notice').style.display = 'flex'
     }).addTo(map);
 
     let isAdding = false;
@@ -674,33 +638,71 @@
         markers.forEach(marker => map.removeLayer(marker));
         markers = [];
 
-        recordsToRender.forEach(record => {
-            const isMine = record.is_mine;
-            const icon = isMine ? myIcon : otherIcon;
-            
-            // Determine main image
-            let mainImg = '';
-            if (record.images && record.images.length > 0) mainImg = record.images[0];
-            else if (record.image) mainImg = record.image;
+        // 热力图模式下隐藏猫咪标记，避免重叠
+        if (!heatOn) {
+            recordsToRender.forEach(record => {
+                const isMine = record.is_mine;
+                const icon = isMine ? myIcon : otherIcon;
 
-            const popupContent = `
-                <div class="custom-popup" onclick="showDetailModalById(${record.id})">
-                    ${mainImg ? `<img src="${mainImg}" class="popup-img">` : ''}
+                // Determine main image
+                let mainImg = '';
+                if (record.images && record.images.length > 0) mainImg = record.images[0];
+                else if (record.image) mainImg = record.image;
+
+                // 用 DOM 元素构建弹窗并绑定事件：避免字符串拼接 innerHTML 被 XSS 注入
+                const popupEl = document.createElement('div');
+                popupEl.className = 'custom-popup';
+                popupEl.innerHTML = `
+                    ${mainImg ? `<img src="${safeResourceUrl(mainImg)}" class="popup-img">` : ''}
                     <div class="popup-info">
-                        <div class="popup-title">${record.title}</div>
-                        <div class="popup-desc">${record.desc || '无描述'}</div>
+                        <div class="popup-title">${escapeHtml(record.title)}</div>
+                        <div class="popup-desc">${escapeHtml(record.desc || '无描述')}</div>
                         <div class="user-tag" style="font-size:12px;color:#666;margin-top:5px;display:flex;align-items:center;">
-                            ${record.profiles?.avatar_url ? `<img src="${record.profiles.avatar_url}" style="width:20px;height:20px;border-radius:50%;margin-right:5px;">` : ''}
-                             <span>${record.profiles?.username || '本地记录'}</span>
+                            ${record.profiles?.avatar_url ? `<img src="${safeResourceUrl(record.profiles.avatar_url)}" style="width:20px;height:20px;border-radius:50%;margin-right:5px;">` : ''}
+                             <span>${escapeHtml(record.profiles?.username || '本地记录')}</span>
                         </div>
                         <div style="text-align:center;margin-top:5px;color:#df7d5c;font-size:12px;">点击查看详情</div>
                     </div>
-                </div>
-            `;
-            const marker = L.marker([record.lat, record.lng], { icon: icon }).addTo(map).bindPopup(popupContent);
-            marker.recordId = record.id;
-            markers.push(marker);
-        });
+                `;
+                popupEl.addEventListener('click', () => showDetailModalById(record.id));
+                const marker = L.marker([record.lat, record.lng], { icon: icon }).addTo(map).bindPopup(popupEl);
+                marker.recordId = record.id;
+                markers.push(marker);
+            });
+        }
+        renderHeat(recordsToRender);
+    }
+
+    // 热力图
+    let heatOn = false;
+    let heatLayer = null;
+    function toggleHeatmap() {
+        heatOn = !heatOn;
+        const btn = document.getElementById('heat-btn');
+        btn.classList.toggle('active', heatOn);
+        btn.innerHTML = heatOn ? '🐾 标记' : '🔥 热力图';
+        if (heatLayer) {
+            map.removeLayer(heatLayer);
+            heatLayer = null;
+        }
+        renderMarkers(allRecords);
+    }
+    function renderHeat(recordsToRender) {
+        if (heatLayer) {
+            map.removeLayer(heatLayer);
+            heatLayer = null;
+        }
+        if (!heatOn) return;
+        const points = recordsToRender
+            .filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lng))
+            .map(r => [r.lat, r.lng, 1]);
+        if (points.length === 0) return;
+        heatLayer = L.heatLayer(points, {
+            radius: 32,
+            blur: 20,
+            maxZoom: 15,
+            gradient: { 0.2: '#fde79a', 0.4: '#f9b26a', 0.7: '#df7d5c', 1.0: '#c0392b' }
+        }).addTo(map);
     }
 
     // Expose for popup onclick
@@ -733,20 +735,20 @@
             if (record.images && record.images.length > 0) mainImg = record.images[0];
             else if (record.image) mainImg = record.image;
             
-            const imgHtml = mainImg 
-                ? `<img src="${mainImg}">` 
+            const imgHtml = mainImg
+                ? `<img src="${safeResourceUrl(mainImg)}">`
                 : '<div style="width:80px;height:80px;background:#f0f0f0;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:20px;">📷</div>';
-            
+
             const dateStr = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
 
             card.innerHTML = `
                 ${imgHtml}
                 <div class="record-card-info">
-                    <div class="record-card-title">${record.title}</div>
-                    <div class="record-card-desc">${record.desc || '暂无描述'}</div>
+                    <div class="record-card-title">${escapeHtml(record.title)}</div>
+                    <div class="record-card-desc">${escapeHtml(record.desc || '暂无描述')}</div>
                     <div class="record-card-meta">
-                         <span>👤 ${record.profiles?.username || '本地记录'}</span>
-                        ${dateStr ? `<span>📅 ${dateStr}</span>` : ''}
+                         <span>👤 ${escapeHtml(record.profiles?.username || '本地记录')}</span>
+                        ${dateStr ? `<span>📅 ${escapeHtml(dateStr)}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -765,8 +767,8 @@
         // User Info
         const userHtml = `
             <div style="display:flex;align-items:center;margin-bottom:10px;">
-                ${record.profiles?.avatar_url ? `<img src="${record.profiles.avatar_url}" style="width:30px;height:30px;border-radius:50%;margin-right:10px;">` : ''}
-                <span style="font-weight:bold;">${record.profiles?.username || '未知用户'}</span>
+                ${record.profiles?.avatar_url ? `<img src="${safeResourceUrl(record.profiles.avatar_url)}" style="width:30px;height:30px;border-radius:50%;margin-right:10px;">` : ''}
+                <span style="font-weight:bold;">${escapeHtml(record.profiles?.username || '未知用户')}</span>
             </div>
         `;
         document.getElementById('detail-user').innerHTML = userHtml;
@@ -848,18 +850,31 @@
         comments.forEach(c => {
             const div = document.createElement('div');
             div.className = 'comment-item';
-            
-            let deleteBtn = '';
+
+            // 评论内容全部用 textContent 写入，杜绝 HTML 注入
+            const userSpan = document.createElement('span');
+            userSpan.className = 'comment-user';
+            userSpan.textContent = (c.profiles?.username || '未知用户') + '：';
+
+            const contentSpan = document.createElement('span');
+            contentSpan.className = 'comment-content';
+            contentSpan.textContent = c.content;
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'comment-time';
+            timeSpan.textContent = new Date(c.created_at).toLocaleString();
+
+            div.append(userSpan, contentSpan, timeSpan);
+
             if (currentUserId && c.user_id === currentUserId) {
-                deleteBtn = `<span class="delete-comment-btn" onclick="deleteComment(${c.id})" style="color:red; cursor:pointer; margin-left:10px; font-size:12px;">[删除]</span>`;
+                const deleteBtn = document.createElement('span');
+                deleteBtn.className = 'delete-comment-btn';
+                deleteBtn.textContent = '[删除]';
+                deleteBtn.style.cssText = 'color:red; cursor:pointer; margin-left:10px; font-size:12px;';
+                deleteBtn.addEventListener('click', () => deleteComment(c.id));
+                div.appendChild(deleteBtn);
             }
 
-            div.innerHTML = `
-                <span class="comment-user">${c.profiles?.username || '未知用户'}:</span>
-                <span class="comment-content">${c.content}</span>
-                <span class="comment-time">${new Date(c.created_at).toLocaleString()}</span>
-                ${deleteBtn}
-            `;
             commentsList.appendChild(div);
         });
     }

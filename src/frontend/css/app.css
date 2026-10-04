@@ -123,6 +123,37 @@ button, input { font: inherit; }
 
 .sidebar-spacer { flex: 1; }
 
+.data-manage {
+    padding: 6px 0 10px;
+    border-top: 1px solid var(--app-sidebar-border);
+    margin-bottom: 10px;
+}
+
+.data-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 12px;
+}
+
+.data-btn {
+    min-height: 32px;
+    padding: 0 10px;
+    text-align: left;
+    color: #6f5e54;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background .18s ease, color .18s ease;
+}
+
+.data-btn:hover {
+    color: var(--app-primary-dark);
+    background: #fff2eb;
+}
+
 .account-card {
     display: flex;
     align-items: center;
@@ -216,6 +247,7 @@ button, input { font: inherit; }
     .brand { justify-content: center; padding: 0 0 22px; }
     .brand-copy, .nav-section-label, .nav-label, .account-copy, .account-action { display: none; }
     .nav-item { justify-content: center; padding: 0; }
+    .data-manage { display: none; }
     .account-card { justify-content: center; padding: 12px 0; }
     .app-topbar { padding: 0 16px; }
     .page-description { display: none; }

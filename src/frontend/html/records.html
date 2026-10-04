@@ -46,6 +46,7 @@
             <th data-field="count">数量 ↕</th>
             <th data-field="species">猫咪/品种 ↕</th>
             <th data-field="gender">毛色/特征 ↕</th>
+            <th>猫咪档案</th>
             <th>操作</th>
           </tr>
           </thead>
@@ -55,28 +56,46 @@
 
 <script>
   const { ipcRenderer } = require('electron')
+  const { escapeHtml } = require('../../backend/utils')
   let records = []
+  let cats = []
 
   async function loadRecords() {
     records = await ipcRenderer.invoke('get_records')
+    try {
+      cats = await ipcRenderer.invoke('get_cats') || []
+    } catch (e) {
+      cats = []
+    }
     displayRecords(records)
+  }
+
+  function catNameOf(record) {
+    if (record.cat_id === undefined || record.cat_id === null || record.cat_id === '') return ''
+    const cat = cats.find(c => String(c.id) === String(record.cat_id))
+    return cat ? cat.name : ''
   }
 
   function displayRecords(data) {
     const tbody = document.getElementById('records_body')
     tbody.innerHTML = ''
     data.forEach((r, idx) => {
+      // data-index 必须是记录在完整 records 数组中的下标：
+      // 搜索/排序后显示的是子集，用子集下标会编辑/删除到错误的记录
+      const originalIndex = records.indexOf(r)
+      const catName = catNameOf(r)
       const tr = document.createElement('tr')
-      const idAttr = r.id ? `data-id="${r.id}"` : '';
+      const idAttr = r.id ? `data-id="${escapeHtml(r.id)}"` : '';
       tr.innerHTML = `
-            <td>${r.time}</td>
-            <td>${r.location}</td>
-            <td>${r.count}</td>
-            <td>${r.species}</td>
-            <td>${r.gender}</td>
+            <td>${escapeHtml(r.time)}</td>
+            <td>${escapeHtml(r.location)}</td>
+            <td>${escapeHtml(r.count)}</td>
+            <td>${escapeHtml(r.species)}</td>
+            <td>${escapeHtml(r.gender)}</td>
+            <td>${catName ? `🐱 ${escapeHtml(catName)}` : '<span style="color:#bbb;">未关联</span>'}</td>
             <td>
-                <button class="editBtn" data-index="${idx}" ${idAttr}>编辑</button>
-                <button class="delBtn" data-index="${idx}" ${idAttr}>删除</button>
+                <button class="editBtn" data-index="${originalIndex}" ${idAttr}>编辑</button>
+                <button class="delBtn" data-index="${originalIndex}" ${idAttr}>删除</button>
             </td>
         `
       tbody.appendChild(tr)
@@ -117,9 +136,9 @@
   searchInput.addEventListener('input', () => {
     const query = searchInput.value.toLowerCase()
     const filtered = records.filter(r =>
-            r.time.toLowerCase().includes(query) ||
-            r.location.toLowerCase().includes(query) ||
-            r.species.toLowerCase().includes(query)
+            String(r.time || '').toLowerCase().includes(query) ||
+            String(r.location || '').toLowerCase().includes(query) ||
+            String(r.species || '').toLowerCase().includes(query)
     )
     displayRecords(filtered)
   })
@@ -146,6 +165,11 @@
                 <label>数量: <input id="edit-count" type="number" style="width:100%;margin-bottom:10px;"></label>
                  <label>猫咪/品种: <input id="edit-species" style="width:100%;margin-bottom:10px;"></label>
                  <label>毛色/特征: <input id="edit-gender" style="width:100%;margin-bottom:10px;"></label>
+                 <label>关联猫咪档案:
+                     <select id="edit-cat" style="width:100%;margin-bottom:10px;">
+                         <option value="">未关联</option>
+                     </select>
+                 </label>
                 <div style="text-align:right;">
                     <button onclick="closeEditModal()">取消</button>
                     <button onclick="saveEdit()" style="background:#df7d5c;color:white;">保存</button>
@@ -165,7 +189,12 @@
       document.getElementById('edit-count').value = record.count
       document.getElementById('edit-species').value = record.species
       document.getElementById('edit-gender').value = record.gender
-      
+
+      const catSelect = document.getElementById('edit-cat')
+      catSelect.innerHTML = '<option value="">未关联</option>' +
+          cats.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')
+      catSelect.value = record.cat_id ?? ''
+
       modal.style.display = 'flex'
   }
 
@@ -183,7 +212,8 @@
           location: document.getElementById('edit-location').value,
           count: document.getElementById('edit-count').value, // Keep as string to match add_record
           species: document.getElementById('edit-species').value,
-          gender: document.getElementById('edit-gender').value
+          gender: document.getElementById('edit-gender').value,
+          cat_id: document.getElementById('edit-cat').value || null
       }
       
       // Remove empty fields to avoid overwriting with null/empty if that's not intended
