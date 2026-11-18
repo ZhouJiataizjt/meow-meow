@@ -112,13 +112,7 @@ p { line-height:1.75; }
 .map-tools #list-btn:hover, .map-tools #heat-btn:hover, .map-tools #areas-btn:hover { background:#edf6f8; }
 .map-tools #heat-btn.active, .map-tools #areas-btn.active, .map-page .filter-toggle.active { background:#eaf6f4; color:#286c70; box-shadow:none; border-color:#b8dcd7; }
 .map-page #add-btn { background:#d5eeeb; color:#286c70; }
-.map-page .list-header, .map-page .filter-section { border-color:var(--border-color); background:#fff; }
 .map-page #records-list-container { background:#f4f8fa; }
-.map-page .record-card { border-color:var(--border-color); border-radius:14px; padding:20px; }
-.map-page .record-card-title { color:#304b55; }
-.map-page .record-card-desc, .map-page .record-card-meta { color:#657d86; }
-.map-page .filter-section { display:flex; flex-wrap:wrap; gap:10px; }
-.map-page .filter-section select { min-width:130px; flex:1 1 140px; }
 .map-page .campus-label { color:#48636d; }
 .map-page .campus-summary-title { color:#367f83; }
 .map-page .btn-save { background:#d5eeeb; color:#286c70; }
@@ -132,9 +126,12 @@ p { line-height:1.75; }
 .profile-page { align-items:stretch; padding:36px; }
 .profile-layout { display:grid; grid-template-columns:190px minmax(0,1fr); gap:40px; max-width:900px; margin:0 auto; }
 .profile-identity { padding:24px 0; text-align:center; }
-.profile-identity img { width:120px; height:100px; object-fit:contain; }
+.profile-identity > img { width:96px; height:96px; padding:12px; object-fit:contain; border:1px solid var(--border-color); border-radius:50%; background:var(--app-primary-soft); }
+.profile-identity > img.has-photo { padding:0; object-fit:cover; }
 .profile-identity h2 { margin:16px 0 4px; font-size:19px; overflow-wrap:anywhere; }
 .profile-identity p { margin:0; color:var(--muted-color); font-size:13px; }
+.profile-avatar-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:6px; margin-top:12px; }
+.profile-avatar-actions button { min-height:34px; padding:0 10px; font-size:12px; }
 .profile-form { background:#fff; border:1px solid var(--border-color); border-radius:16px; padding:32px; }
 .profile-form h2 { text-align:left; margin:0 0 8px; font-size:21px; font-weight:600; }
 .profile-form > p { color:var(--muted-color); font-size:13px; margin:0 0 30px; }
@@ -151,18 +148,16 @@ p { line-height:1.75; }
  .stats-page .stats-grid { grid-template-columns:repeat(2,minmax(0,1fr)); padding:20px; }
  .stats-page .stats-section { padding:20px; }
  .profile-layout { grid-template-columns:1fr; gap:16px; }
- .profile-identity { padding:0; display:none; }
+ .profile-identity { padding:0; display:grid; grid-template-columns:64px minmax(0, 1fr); gap:12px; text-align:left; align-items:center; }
+ .profile-identity > img { width:64px; height:64px; padding:8px; }
+ .profile-identity h2 { margin:0 0 3px; text-align:left; }
+ .profile-avatar-actions { justify-content:flex-start; margin-top:8px; }
  .profile-form { padding:24px; }
  .records-summary { display:none; }
  .guide-option { gap:16px; }
 }
 
 .account-avatar { border:0; padding:2px; min-height:34px; }
-.map-page .filter-section { padding:16px 20px; border-bottom:1px solid var(--border-color); }
-.map-page .filter-control { background:#f5f9fa; border-color:var(--border-color); color:#48636d; }
-.map-page .date-range-group { flex:0 1 auto; }
-.map-page .date-input { width:145px; margin:0; min-height:36px; padding:6px; }
-.map-page .filter-section select { max-width:230px; }
 
 .nav-item { font-weight:500; }
 .stats-page .month-bar { min-height:0; }
@@ -170,9 +165,6 @@ p { line-height:1.75; }
 .map-page .campus-summary button, .map-page .comments-section button { background:#d5eeeb !important; color:#286469 !important; }
 .map-page #btn-edit { color:#286469 !important; }
 .map-page #btn-delete { background:#f9e6e4 !important; color:#a34342 !important; }
-.map-page .cluster-back { background:#eaf6f4; color:#286c70; }
-.map-page .cluster-back:hover { background:#d5eeeb; }
-.map-page .filter-control:hover { border-color:#79b7b2; }
 .map-page .gallery-thumb:hover { border-color:#79b7b2; }
 
 .records-page .toolbar { flex-wrap:wrap; align-items:flex-end; }

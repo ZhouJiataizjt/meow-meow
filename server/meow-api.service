@@ -12,6 +12,7 @@ WorkingDirectory=/srv/projects/meow-map/server
 Environment=NODE_ENV=production
 Environment=UV_THREADPOOL_SIZE=1
 Environment=MEOW_CONFIG=/etc/meow-map/config.json
+EnvironmentFile=-/etc/meow-map/dashscope.env
 ExecStart=/usr/bin/node --max-old-space-size=64 index.js
 Restart=on-failure
 RestartSec=10

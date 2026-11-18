@@ -4,6 +4,7 @@
 const { nativeImage } = require('electron')
 const fs = require('fs')
 const { getMimeType } = require('./utils')
+const { MAX_AVATAR_BYTES, AVATAR_PREFIX } = require('./user_profile')
 
 const MAX_EDGE = 1600      // 长边超过该值时等比缩小
 const JPEG_QUALITY = 80
@@ -40,4 +41,19 @@ function compressImageForUpload(filePath) {
     return { buffer: jpeg, mimeType: 'image/jpeg' }
 }
 
-module.exports = { compressImageForUpload }
+function profileAvatarFromFile(filePath) {
+    if (fs.statSync(filePath).size > 20 * 1024 * 1024) throw new Error('请选择小于 20 MB 的照片')
+    const image = nativeImage.createFromPath(filePath)
+    if (image.isEmpty()) throw new Error('无法打开这张图片，请选择 JPG 或 PNG')
+    const { width, height } = image.getSize()
+    const side = Math.min(width, height)
+    const square = image.crop({ x: Math.floor((width - side) / 2), y: Math.floor((height - side) / 2), width: side, height: side })
+    const resized = square.resize({ width: Math.min(side, 192), height: Math.min(side, 192), quality: 'best' })
+    for (const quality of [86, 72, 55]) {
+        const jpeg = resized.toJPEG(quality)
+        if (jpeg.length && jpeg.length <= MAX_AVATAR_BYTES) return AVATAR_PREFIX + jpeg.toString('base64')
+    }
+    throw new Error('无法生成头像，请换一张图片')
+}
+
+module.exports = { compressImageForUpload, profileAvatarFromFile }

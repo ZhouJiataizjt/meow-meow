@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>寻猫小助手</title>
+    <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/assistant.css">
+</head>
+<body class="assistant-page">
+    <main class="assistant-layout">
+        <form id="ask-form" class="assistant-form">
+            <label for="question">你想找哪只猫？</label>
+            <p id="question-help">可以问猫咪的名字、最近的目击时间，或某个地方有哪些记录。</p>
+            <textarea id="question" rows="3" maxlength="300" required aria-describedby="question-help"
+                placeholder="例如：图书馆附近有猫咪观察记录吗？"></textarea>
+            <div class="assistant-actions">
+                <button class="assistant-example" id="recent" type="button">最近有哪些猫咪目击？</button>
+                <button id="ask" type="submit">提问</button>
+            </div>
+            <small>问题和相关公开观察会发送给阿里云百炼。目击记录可能已经过时。</small>
+        </form>
+
+        <p id="assistant-status" class="assistant-status" role="status"></p>
+        <button id="assistant-login" type="button" hidden>登录云端账户</button>
+        <section id="result" class="assistant-result" aria-labelledby="result-heading" hidden>
+            <h2 id="result-heading">小助手的回答</h2>
+            <p id="answer"></p>
+            <details id="evidence" open hidden>
+                <summary>引用的公开观察</summary>
+                <ul id="sources"></ul>
+            </details>
+        </section>
+    </main>
+    <script src="../js/assistant.js"></script>
+</body>
+</html>

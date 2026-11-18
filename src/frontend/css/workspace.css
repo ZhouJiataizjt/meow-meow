@@ -37,20 +37,13 @@
 .map-tools #list-btn:hover, .map-tools #heat-btn:hover, .map-tools #areas-btn:hover { background: #f6eee8; }
 .map-tools #heat-btn.active, .map-tools #areas-btn.active { color: #93432d; background: #fff0e9; box-shadow: inset 0 0 0 1px #e7c5b7; }
 .map-page #add-btn { width: 48px; height: 48px; min-height: 48px; padding: 0; right: 20px; bottom: 28px; background: var(--accent-color); box-shadow: 0 3px 10px #33292333; }
-.map-page .filter-control { border-radius: 6px; }
 .map-page .filter-toggle.active { color: #93432d; background: #fff0e9; border-color: #ad5035; }
-.map-page .list-header { box-shadow: none; border-bottom: 1px solid var(--border-color); }
-.map-page .list-search-bar input { margin: 0; border-radius: 6px; }
-.map-page .record-card { box-shadow: none; border: 1px solid var(--border-color); }
-.map-page .record-card:hover { transform: none; box-shadow: none; border-color: var(--accent-color); }
 .map-page .modal-content { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow-y: auto; }
 .map-page #offline-notice { top: 68px; max-width: calc(100vw - 32px); }
 @media (max-width: 640px) {
     .cat-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
     .map-tools { top: 12px; right: 12px; gap: 0; }
     .map-tools #list-btn, .map-tools #heat-btn, .map-tools #areas-btn { padding: 0 8px; }
-    .map-page .list-header { flex-wrap: wrap; gap: 10px; }
-    .map-page .list-search-bar { margin: 0; max-width: none; min-width: 180px; }
     .stats-page .bar-name { flex-basis: 100px; }
 }
 

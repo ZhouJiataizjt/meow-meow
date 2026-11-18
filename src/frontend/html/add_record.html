@@ -58,6 +58,7 @@
                 <button type="button" id="ai-recognize-btn" style="flex:1; background:#6c5ce7;"><img class="ui-icon " src="../assets/照相机.svg" alt="" aria-hidden="true"> 拍照识别品种</button>
             </div>
             <div id="ai-result" style="display:none; font-size:12px; color:#666; background:#f6f3ef; border-radius:8px; padding:8px 10px; margin-bottom:10px; white-space:pre-wrap; max-height:110px; overflow-y:auto;"></div>
+            <p id="publication-note" hidden>提交后，地点和观察内容会出现在公开观察里。</p>
             <button type="submit" style="width: 100%; margin-top: 10px;">提交</button>
         </form>
     </div>
@@ -110,12 +111,18 @@
     const now = new Date()
     document.getElementById('time').value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
     const form = document.getElementById('recordForm')
+    const locationInput = document.getElementById('location')
+    ipcRenderer.invoke('is-cloud-enabled').then(enabled => {
+        document.getElementById('publication-note').hidden = !enabled
+    })
     form.addEventListener('submit', async (e) => {
         e.preventDefault()
+        locationInput.value = locationInput.value.trim()
+        if (!locationInput.reportValidity()) return
         try { catPicker.validate() } catch (error) { alert(error.message); return }
         const newRecord = {
             time: document.getElementById('time').value,
-            location: document.getElementById('location').value,
+            location: locationInput.value,
             count: document.getElementById('count').value,
             species: document.getElementById('species').value,
             gender: document.getElementById('gender').value,

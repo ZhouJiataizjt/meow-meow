@@ -12,9 +12,15 @@
 <body class="profile-page">
     <main class="profile-layout">
         <aside class="profile-identity">
-            <img src="../assets/猫咪2.svg" alt="">
-            <h2 id="identity-name">猫咪观察员</h2>
-            <p id="identity-mode">你的观察者档案</p>
+            <img id="identity-avatar" src="../assets/猫咪2.svg" alt="个人头像">
+            <div class="profile-identity-caption">
+                <h2 id="identity-name">猫咪观察员</h2>
+                <p id="identity-mode">你的观察者档案</p>
+                <div class="profile-avatar-actions">
+                    <button id="profile-avatar-select" type="button" class="secondary" disabled>更换头像</button>
+                    <button id="profile-avatar-reset" type="button" class="secondary" disabled>恢复默认</button>
+                </div>
+            </div>
         </aside>
         <form class="profile-form" id="profile-form">
             <h2>编辑个人资料</h2>
@@ -39,14 +45,41 @@
     </main>
     <script>
         const { ipcRenderer } = require('electron')
+        const { safeResourceUrl } = require('../../backend/utils')
         const nameField = document.getElementById('profile-name')
         const saveButton = document.getElementById('profile-save')
         const message = document.getElementById('profile-message')
+        const avatarImage = document.getElementById('identity-avatar')
+        const selectAvatar = document.getElementById('profile-avatar-select')
+        const resetAvatar = document.getElementById('profile-avatar-reset')
         let currentId = null
         let savedName = ''
+        let savedAvatar = null
+        let draftAvatar = null
+        let canEdit = false
+        let canEditAvatar = false
+        let saving = false
+        let choosing = false
         function status(text, error = false) {
             message.textContent = text
             message.classList.toggle('error', error)
+        }
+        function renderAvatar() {
+            const custom = Boolean(safeResourceUrl(draftAvatar))
+            avatarImage.src = custom ? draftAvatar : '../assets/猫咪2.svg'
+            avatarImage.classList.toggle('has-photo', custom)
+        }
+        avatarImage.addEventListener('error', () => {
+            if (!avatarImage.classList.contains('has-photo')) return
+            avatarImage.classList.remove('has-photo')
+            avatarImage.src = '../assets/猫咪2.svg'
+        })
+        function updateControls() {
+            const busy = saving || choosing
+            nameField.disabled = !canEdit || busy
+            selectAvatar.disabled = !canEditAvatar || busy
+            resetAvatar.disabled = !canEditAvatar || busy || !draftAvatar
+            saveButton.disabled = !canEdit || busy || (nameField.value.trim() === savedName && draftAvatar === savedAvatar)
         }
         async function loadProfile() {
             saveButton.disabled = true
@@ -59,9 +92,13 @@
                     return
                 }
                 currentId = current.id
+                canEdit = current.profile_editable !== false
+                canEditAvatar = canEdit && current.avatar_editable === true
                 savedName = current.profile?.username || '猫咪观察员'
+                savedAvatar = draftAvatar = current.profile?.avatar_url || null
                 nameField.value = savedName
-                nameField.disabled = current.profile_editable === false
+                renderAvatar()
+                updateControls()
                 document.getElementById('profile-id').value = currentId
                 document.getElementById('identity-name').textContent = savedName
                 document.getElementById('identity-mode').textContent = current.email ? '云端观察者' : '本地观察者'
@@ -75,29 +112,57 @@
             }
         }
         nameField.addEventListener('input', () => {
-            saveButton.disabled = !currentId || nameField.value.trim() === savedName
+            updateControls()
             status('')
+        })
+        selectAvatar.addEventListener('click', async () => {
+            choosing = true
+            updateControls()
+            try {
+                const image = await ipcRenderer.invoke('select_profile_avatar')
+                if (image) {
+                    draftAvatar = image
+                    renderAvatar()
+                    status('头像已预览，保存后生效。')
+                }
+            } catch (error) {
+                status(error.message, true)
+            } finally {
+                choosing = false
+                updateControls()
+            }
+        })
+        resetAvatar.addEventListener('click', () => {
+            draftAvatar = null
+            renderAvatar()
+            updateControls()
+            status(savedAvatar ? '保存后将恢复默认头像。' : '')
         })
         document.getElementById('profile-form').addEventListener('submit', async event => {
             event.preventDefault()
+            if (saveButton.disabled || !currentId) return
             const username = nameField.value.trim()
             if (!username || [...username].length > 30) { status('请填写 1–30 个字符的昵称。', true); return }
-            if (!currentId) return
-            saveButton.disabled = true
-            nameField.disabled = true
+            saving = true
+            updateControls()
             status('正在保存…')
             try {
-                const result = await ipcRenderer.invoke('update_profile', { username })
+                const input = { username }
+                if (draftAvatar !== savedAvatar) input.avatar_url = draftAvatar
+                const result = await ipcRenderer.invoke('update_profile', input)
                 if (!result?.success) throw new Error(result?.error || '保存失败，请稍后重试')
                 savedName = username
+                savedAvatar = draftAvatar
                 nameField.value = username
                 document.getElementById('identity-name').textContent = username
                 status('已保存')
                 window.parent.postMessage({ type: 'profile-updated' }, '*')
             } catch (error) {
                 status(error.message, true)
-                saveButton.disabled = false
-            } finally { nameField.disabled = false }
+            } finally {
+                saving = false
+                updateControls()
+            }
         })
         document.getElementById('profile-login').addEventListener('click', async () => {
             await ipcRenderer.invoke('open_login_window')

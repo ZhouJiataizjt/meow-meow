@@ -10,7 +10,7 @@ const { normalizeCat } = require('../../backend/cat_profile')
 const { initializeLocalStore } = require('../../backend/local_store')
 const { randomUUID } = require('crypto')
 const { findRecordIndex } = require('../../backend/utils')
-const { compressImageForUpload } = require('../../backend/image_utils')
+const { compressImageForUpload, profileAvatarFromFile } = require('../../backend/image_utils')
 
 // 初始化 Supabase 客户端
 // 自定义存储适配器，用于在 Electron 主进程中持久化 Session
@@ -130,165 +130,21 @@ ipcMain.handle('select-image', async (event, allowMultiple = false) => {
     if (result.canceled || result.filePaths.length === 0) return null
     return allowMultiple ? result.filePaths : result.filePaths[0]
 })
-let catSearchWin
-ipcMain.handle('search_cat_newpage', async()=>{
-    if (catSearchWin) {
-        catSearchWin.focus()
-        return
-    }
-    catSearchWin = createChildWindow({
-        width: 500,
-        height: 600,
-        file: path.join(__dirname, "../html/cat_select_page.html")
-    })
-    catSearchWin.on('close',()=> catSearchWin = null)
+ipcMain.handle('select_profile_avatar', async event => {
+    const options = { title: '选择个人头像', filters: [{ name: '头像图片', extensions: ['jpg', 'jpeg', 'png'] }], properties: ['openFile'] }
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const result = await (owner ? dialog.showOpenDialog(owner, options) : dialog.showOpenDialog(options))
+    if (result.canceled || !result.filePaths.length) return null
+    return profileAvatarFromFile(result.filePaths[0])
 })
-
-ipcMain.handle('area_search', async()=>{
-    catSearchWin.loadFile(path.join(__dirname, "../html/area_search.html"))
-})
-
-ipcMain.handle('name_search', async()=>{
-    catSearchWin.loadFile(path.join(__dirname, "../html/name_search.html"))
-})
-
-// 离线猫咪百科：优先查本地词典，查不到再走大模型
-const BREEDS_FILE = path.join(__dirname, '../../../data/breeds.json')
-let breedsCache = null
-function loadBreeds() {
-    if (!breedsCache) {
-        try {
-            breedsCache = JSON.parse(fs.readFileSync(BREEDS_FILE, 'utf-8'))
-        } catch (e) {
-            console.error('读取本地猫咪百科失败:', e)
-            breedsCache = {}
-        }
-    }
-    return breedsCache
-}
-
-function lookupBreedLocal(name) {
-    const breeds = loadBreeds()
-    const query = String(name || '').trim().toLowerCase()
-    if (!query) return null
-    const exact = Object.keys(breeds).find(breed => {
-        const entry = breeds[breed]
-        return breed.toLowerCase() === query ||
-            (entry.aliases || []).some(alias => String(alias).toLowerCase() === query)
-    })
-    if (exact) return { name: exact, ...breeds[exact] }
-    const partial = Object.keys(breeds).find(breed => {
-        const entry = breeds[breed]
-        return breed.toLowerCase().includes(query) ||
-            (entry.aliases || []).some(alias => String(alias).toLowerCase().includes(query)) ||
-            query.includes(breed.toLowerCase())
-    })
-    if (partial) return { name: partial, ...breeds[partial] }
-    return null
-}
-
-function formatBreedEntry(entry) {
-    const lines = [
-        `【本地猫咪百科】${entry.name}`,
-        '',
-        `外观特征：${entry.appearance}`,
-        `性格特点：${entry.personality}`,
-        `照顾建议：${entry.care}`
-    ]
-    if (entry.aliases && entry.aliases.length > 0) {
-        lines.push(`常见别称：${entry.aliases.join('、')}`)
-    }
-    if (entry.warning) {
-        lines.push('', `⚠️ 注意：${entry.warning}`)
-    }
-    return lines.join('\n')
-}
-
-// 本地百科查询接口（渲染进程可直接调用，用于即时提示）
-ipcMain.handle('breed_lookup_local', async (event, name) => {
-    return lookupBreedLocal(name)
-})
-
-ipcMain.handle('area_searcher', async(event, area)=>{
-    const prompt = `「${area}」地区常见或容易遇到哪些猫咪？可以从猫咪活动区域、常见品种和友善观察方式简要概述`
-    try {
-        return await call_llm(prompt)
-    }
-    catch (err) {
-        return `调用llm出错：${err.message}`;
-    }
-})
-
-ipcMain.handle('name_searcher', async(event, name)=>{
-    const local = lookupBreedLocal(name)
-    if (local) return formatBreedEntry(local)
-
-    const prompt = `请确认「${name}」是否是常见的猫咪名称、品种或称呼。如存在，请简要概述其外观、性格和照顾注意事项`
-    try {
-        return await call_llm(prompt)
-    }
-    catch (err) {
-        return `本地百科与 AI 查询都未能找到「${name}」的相关信息（${err.message}）`;
-    }
-})
-
-let recomWin
-ipcMain.handle('todays_newpage', async()=>{
-    if (recomWin) {
-        recomWin.focus()
-        return
-    }
-    recomWin = createChildWindow({
-        width: 500,
-        height: 600,
-        file: path.join(__dirname, "../html/recommend.html")
-    })
-    recomWin.on('close', ()=> recomWin = null)
-})
-
-ipcMain.handle('todays_recommend', async(event, area)=>{
-    const now = new Date()
-    const nowStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()} ${now.getHours()}:${now.getMinutes()}`
-    const prompt = `请推荐今日「${nowStr}」在「${area}」适合寻找或观察猫咪的地点，并简要说明可能遇到的猫咪类型和友善观察注意事项`
-    try {
-        return await call_llm(prompt)
-    }
-    catch (err) {
-        return `调用llm出错：${err.message}`;
-    }
+ipcMain.handle('ask_cat_assistant', async () => ({
+    error: '寻猫小助手需要连接云端，本地模式下仍可使用地图和观察记录。'
+}))
+ipcMain.handle('get_public_observations', async () => {
+    throw new Error('公开观察需要连接云端')
 })
 
 const API_KEY = "your api_key"
-const APP_ID = "ignore it if you don't use bailian api_key"
-async function call_llm(promptText){
-    if (!API_KEY || API_KEY === 'your api_key') {
-        return 'AI 查询服务尚未配置。你仍然可以使用本地猫咪记录和喵喵地图功能。'
-    }
-    try {
-        const response = await axios.post(
-            `https://dashscope.aliyuncs.com/api/v1/apps/${APP_ID}/completion`,  // or https://api.{something}.com/v1
-            {
-                input: {
-                    prompt: promptText
-                },
-                parameters: {},
-                debug: {},
-            },
-            {
-                headers: {
-                    "Authorization": `Bearer ${API_KEY}`,
-                    "Content-Type": "application/json",
-                }
-            }
-        )
-        return response.data.output?.text || JSON.stringify(response.data)
-
-    } catch (err) {
-        console.error('llm请求失败：', err)
-        throw new Error(err.response?.data?.message || err.message || '未知错误')
-    }
-}
-
 // 拍照识猫：用多模态大模型识别图片中的猫咪品种（不再依赖本地 PyTorch 模型）
 const VL_MODEL = 'qwen-vl-plus'
 const VL_ENDPOINT = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
@@ -713,7 +569,7 @@ ipcMain.handle('delete_comment', async (event, commentId) => {
 });
 
 ipcMain.handle('get_current_user_profile', async () => {
-    if (!supabase) return localProfile(LOCAL_PROFILE_FILE);
+    if (!supabase) return { ...localProfile(LOCAL_PROFILE_FILE), avatar_editable: true };
     const { data: { user } } = await getUserWithRetry();
     if (!user) return null;
     
@@ -724,7 +580,7 @@ ipcMain.handle('get_current_user_profile', async () => {
         .maybeSingle()
     );
         
-    return { ...user, profile };
+    return { ...user, profile, avatar_editable: true };
 });
 
 ipcMain.handle('update_profile', async (event, input) => {
@@ -736,8 +592,8 @@ ipcMain.handle('update_profile', async (event, input) => {
     const { data: { user } } = await getUserWithRetry();
     if (!user) return false;
 
-    let username;
-    try { username = profileUpdate(input, user.id).username }
+    let fields;
+    try { fields = profileUpdate(input, user.id) }
     catch (error) { return { success: false, error: error.message } }
     let avatarUrl = null;
     if (avatarPath && fs.existsSync(avatarPath)) {
@@ -764,8 +620,7 @@ ipcMain.handle('update_profile', async (event, input) => {
         }
     }
 
-    const updates = { updated_at: new Date() };
-    if (username) updates.username = username;
+    const updates = { updated_at: new Date(), ...fields };
     if (avatarUrl) updates.avatar_url = avatarUrl;
 
     const { error } = await supabaseWithRetry(() => supabase
@@ -774,7 +629,7 @@ ipcMain.handle('update_profile', async (event, input) => {
     );
     
     if (error) return { success: false, error: error.message };
-    return { success: true };
+    return { success: true, user: { ...user, profile: updates } };
 });
 
 ipcMain.handle('update_record', async (event, { id, index, record }) => {

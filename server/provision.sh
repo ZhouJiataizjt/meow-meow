@@ -15,6 +15,7 @@ id meow-api >/dev/null 2>&1 || useradd --system --home /var/lib/meow-map --shell
 install -d -o root -g meow-api -m 750 /etc/meow-map
 install -d -o meow-api -g meow-api -m 700 /var/lib/meow-map/uploads
 mysql < schema.sql
+mysql < profile-migration.sql
 python3 - <<'PY'
 import json, secrets, subprocess, os
 from pathlib import Path

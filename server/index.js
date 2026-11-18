@@ -4,14 +4,9 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const crypto = require('node:crypto')
 const { promisify } = require('node:util')
-// Standalone deployment keeps validation independent of the desktop bundle.
-function profileUpdate(input, userId) {
-    if (!input || typeof input.username !== 'string') throw new Error('请填写昵称')
-    if (input.id !== undefined && input.id !== userId) throw new Error('用户 ID 不可修改')
-    const username = input.username.trim()
-    if (!username || [...username].length > 30 || /[\u0000-\u001f\u007f]/.test(username)) throw new Error('昵称需为 1–30 个字符，且不能包含控制字符')
-    return { username }
-}
+const { findSightings, askDashScope, campusInventory } = require('./cat-assistant')
+const builtinAvatars = new Set(require('../data/cat-avatar-presets.json').map(preset => preset.id))
+const { profileUpdate } = require('../src/backend/user_profile')
 const mysql = require('mysql2/promise')
 const scrypt = promisify(crypto.scrypt)
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
@@ -29,6 +24,8 @@ async function start() {
     const uploadDir = config.uploadDir || '/var/lib/meow-map/uploads'
     await fs.mkdir(uploadDir, { recursive: true })
     await query('SELECT 1')
+    const assistantAttempts = new Map()
+    let assistantBusy = false
 
     function reply(res, status, data) {
         res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
@@ -46,8 +43,8 @@ async function start() {
         }
         return Buffer.concat(chunks)
     }
-    async function json(req) {
-        try { return JSON.parse((await body(req, 16384)).toString()) }
+    async function json(req, max = 16384) {
+        try { return JSON.parse((await body(req, max)).toString()) }
         catch (error) { if (error.status) throw error; throw failure(400, '无效 JSON') }
     }
     async function userOf(req) {
@@ -102,26 +99,45 @@ async function start() {
                 return reply(res, 200, { success: true, user, token })
             } finally { authBusy = false }
         }
-        // Public map pages have a strict projection: never publish email or private cat notes.
-        if (req.method === 'GET' && url.pathname === '/map_records' && url.searchParams.get('mine') !== '1') {
+        const publicList = url.pathname === '/observations'
+        const publicMap = url.pathname === '/map_records' && url.searchParams.get('mine') !== '1'
+        // Publish observation fields without exposing account email or cat profile notes.
+        if (req.method === 'GET' && (publicList || publicMap)) {
             const offset = Number(url.searchParams.get('offset') || 0)
-            if (!Number.isInteger(offset) || offset < 0 || offset > 10000) throw failure(400, '无效分页')
-            const rows = await query(`SELECT e.user_id,e.id,e.payload,p.username,JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.name')) AS cat_name FROM entries e LEFT JOIN entries c ON c.user_id=e.user_id AND c.kind='cats' AND c.id=JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id')) LEFT JOIN user_profiles p ON p.user_id=e.user_id WHERE e.kind='map_records' ORDER BY e.created_at DESC,e.user_id,e.id LIMIT 101 OFFSET ${offset}`)
+            if (!Number.isSafeInteger(offset) || offset < 0 || (publicMap && offset > 10000)) throw failure(400, '无效分页')
+            const kinds = publicList ? "'records','map_records'" : "'map_records'"
+            const rows = await query(`
+                SELECT e.user_id,e.kind,e.id,e.payload,p.username,
+                    JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.name')) AS cat_name,
+                    JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.avatar')) AS cat_avatar
+                FROM entries e LEFT JOIN entries c ON c.user_id=e.user_id AND c.kind='cats'
+                    AND c.id=JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))
+                LEFT JOIN user_profiles p ON p.user_id=e.user_id
+                WHERE e.kind IN (${kinds})
+                ORDER BY e.created_at DESC,e.user_id,e.kind,e.id LIMIT 101 OFFSET ${offset}
+            `)
             const items = rows.slice(0, 100).map(row => {
                 const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload
                 const publicRecord = { id: row.id, user_id: row.user_id, cat_name: row.cat_name,
                     profiles: { username: row.username || '猫友 ' + row.user_id.slice(0, 6) } }
+                if (builtinAvatars.has(row.cat_avatar)) publicRecord.cat_avatar = row.cat_avatar
                 for (const key of ['title','desc','lat','lng','created_at','time','cat_id','images','image','area','university','campus','zone','is_demo','demo_batch','species','count']) {
                     if (payload[key] !== undefined) publicRecord[key] = payload[key]
+                }
+                if (publicList) {
+                    publicRecord.kind = row.kind
+                    for (const key of ['location', 'gender', 'notes']) {
+                        if (payload[key] !== undefined) publicRecord[key] = payload[key]
+                    }
                 }
                 return publicRecord
             })
             return reply(res, 200, { items, nextOffset: rows.length > 100 ? offset + 100 : null })
         }
-        // A photo becomes public only while referenced by a public map observation.
+        // A photo is public while referenced by an observation from its owner.
         if (req.method === 'GET' && parts[0] === 'uploads' && /^[a-f0-9-]{36}$/.test(parts[1] || '')) {
             const imagePath = '/uploads/' + parts[1]
-            const rows = await query("SELECT u.mime FROM uploads u WHERE u.id=? AND EXISTS (SELECT 1 FROM entries e WHERE e.user_id=u.user_id AND e.kind='map_records' AND (JSON_CONTAINS(e.payload,JSON_QUOTE(?),'$.images') OR JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.image'))=?))", [parts[1], imagePath, imagePath])
+            const rows = await query("SELECT u.mime FROM uploads u WHERE u.id=? AND EXISTS (SELECT 1 FROM entries e WHERE e.user_id=u.user_id AND e.kind IN ('records','map_records') AND (JSON_CONTAINS(e.payload,JSON_QUOTE(?),'$.images') OR JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.image'))=?))", [parts[1], imagePath, imagePath])
             if (rows[0]) {
                 const buffer = await fs.readFile(path.join(uploadDir, parts[1]))
                 res.writeHead(200, { 'Content-Type': rows[0].mime, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
@@ -137,15 +153,49 @@ async function start() {
             return reply(res, 200, { likes: likes[0].total, is_liked: Boolean(likes[0].mine), comments: comments.reverse().map(row => ({ ...row, profiles: { username: row.username || '猫友 ' + row.user_id.slice(0, 6) } })) })
         }
         const user = await userOf(req)
+        if (req.method === 'POST' && url.pathname === '/cat-assistant') {
+            const apiKey = process.env.DASHSCOPE_API_KEY?.trim()
+            const input = await json(req)
+            const question = typeof input?.question === 'string' ? input.question.trim() : ''
+            if (!question || question.length > 300) throw failure(400, '请输入 1–300 个字符的问题')
+            if (assistantBusy) throw failure(429, '寻猫小助手正在回答，请稍后重试')
+            const now = Date.now()
+            for (const [id, attempt] of assistantAttempts) {
+                if (now - attempt.start >= 60000) assistantAttempts.delete(id)
+            }
+            const attempt = assistantAttempts.get(user.id) || { start: now, count: 0 }
+            if (attempt.count >= 5) throw failure(429, '提问过于频繁，请一分钟后重试')
+            attempt.count++
+            assistantAttempts.set(user.id, attempt)
+            assistantBusy = true
+            try {
+                const inventory = await campusInventory(query, question)
+                if (inventory) return reply(res, 200, inventory)
+                if (!apiKey) throw failure(503, '寻猫小助手尚未配置，请联系管理员')
+                const sightings = await findSightings(query, question)
+                const result = await askDashScope({ apiKey, question, sightings }).catch(error => {
+                    const timedOut = ['AbortError', 'TimeoutError'].includes(error.name) ||
+                        ['AbortError', 'TimeoutError'].includes(error.cause?.name)
+                    throw failure(timedOut ? 504 : 502, timedOut
+                        ? '寻猫小助手回答超时，请重试' : '寻猫小助手暂时无法连接百炼，请稍后重试')
+                })
+                return reply(res, 200, result)
+            } finally { assistantBusy = false }
+        }
         if (url.pathname === '/profile' && ['GET', 'PUT'].includes(req.method)) {
             if (req.method === 'PUT') {
                 let update
-                try { update = profileUpdate(await json(req), user.id) }
-                catch (error) { throw failure(400, error.message) }
-                await query('INSERT INTO user_profiles (user_id,username) VALUES (?,?) ON DUPLICATE KEY UPDATE username=VALUES(username)', [user.id, update.username])
+                try { update = profileUpdate(await json(req, 65536), user.id) }
+                catch (error) { if (error.status) throw error; throw failure(400, error.message) }
+                if (update.avatar_url === undefined) {
+                    await query('INSERT INTO user_profiles (user_id,username) VALUES (?,?) ON DUPLICATE KEY UPDATE username=VALUES(username)', [user.id, update.username])
+                } else {
+                    await query('INSERT INTO user_profiles (user_id,username,avatar_url) VALUES (?,?,?) ON DUPLICATE KEY UPDATE username=VALUES(username),avatar_url=VALUES(avatar_url)', [user.id, update.username, update.avatar_url])
+                }
             }
-            const profiles = await query('SELECT username FROM user_profiles WHERE user_id=?', [user.id])
-            return reply(res, 200, { ...user, profile: { username: profiles[0]?.username || '猫友 ' + user.id.slice(0, 6) } })
+            const profiles = await query('SELECT username,avatar_url FROM user_profiles WHERE user_id=?', [user.id])
+            return reply(res, 200, { ...user, avatar_editable: true,
+                profile: { username: profiles[0]?.username || '猫友 ' + user.id.slice(0, 6), avatar_url: profiles[0]?.avatar_url || null } })
         }
         if (social && ['PUT', 'DELETE'].includes(req.method) && parts[3] === 'like') {
             await requireMap(parts[1], parts[2])
@@ -230,7 +280,7 @@ async function start() {
             }
             if (input.images !== undefined && (!Array.isArray(input.images) || input.images.length > 6)) throw failure(400, '最多 6 张图片')
             const pictures = [...(input.images || (input.image ? [input.image] : []))]
-            if (kind === 'cats' && input.avatar && !['builtin:cat','builtin:cat2'].includes(input.avatar)) pictures.push(input.avatar)
+            if (kind === 'cats' && input.avatar && !builtinAvatars.has(input.avatar)) pictures.push(input.avatar)
             for (const picture of pictures) {
                 if (typeof picture !== 'string' || !/^\/uploads\/[a-f0-9-]{36}$/.test(picture)) throw failure(400, '无效图片引用')
                 const owned = await query('SELECT id FROM uploads WHERE id=? AND user_id=?', [picture.split('/').pop(), user.id])

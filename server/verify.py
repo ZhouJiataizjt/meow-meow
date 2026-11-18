@@ -63,11 +63,19 @@ try:
         check(status == 201, 'create ' + kind)
         record['title'] = 'updated'
         check(request('/' + kind + '/' + record['id'], 'PUT', record, token)[0] == 200, 'update ' + kind)
+        if kind == 'records':
+            ordinary_record = record
     map_record = record
     public = request('/map_records')[1]['items']
     shared = next(row for row in public if row['id'] == map_record['id'] and row['user_id'] == first['user']['id'])
     check(shared['cat_name'] == '验证猫咪' and 'email' not in json.dumps(shared) and 'notes' not in shared, 'anonymous map with safe projection')
-    check(request('/records', token=other)[1] == [], 'personal observations remain private')
+    check(request('/records', token=other)[1] == [], 'author management list remains scoped')
+    public_observations = request('/observations')[1]['items']
+    shared_ordinary = next(row for row in public_observations if row['kind'] == 'records' and row['user_id'] == first['user']['id'] and row['id'] == ordinary_record['id'])
+    check(shared_ordinary['location'] == '测试校园' and shared_ordinary['cat_name'] == '验证猫咪' and 'email' not in shared_ordinary, 'ordinary observations readable without login')
+    check(any(row['kind'] == 'map_records' and row['id'] == map_record['id'] for row in public_observations), 'public list includes map sightings')
+    check(request('/records/' + ordinary_record['id'], 'PUT', {'location': '不允许'}, other)[0] == 404, 'another user cannot edit a public observation')
+    check(request('/records/' + ordinary_record['id'], 'DELETE', token=other)[0] == 404, 'another user cannot delete a public observation')
     check(request('/map_records/' + map_record['id'], 'DELETE', token=other)[0] == 404, 'public map cannot be deleted by another user')
     social = '/social/' + first['user']['id'] + '/' + map_record['id']
     check(request(social + '/like', 'PUT')[0] == 401, 'anonymous like rejected')
@@ -93,6 +101,11 @@ try:
     uploads.append(image['id'])
     check(request(image['url'], token=token)[1] == png, 'image download')
     check(request(image['url'], token=other)[0] == 404, 'image ownership')
+    ordinary_record['images'] = [image['url']]
+    check(request('/records/' + ordinary_record['id'], 'PUT', ordinary_record, token)[0] == 200, 'attach photo to ordinary observation')
+    check(request(image['url'])[1] == png, 'ordinary observation photo readable without login')
+    ordinary_record['images'] = []
+    check(request('/records/' + ordinary_record['id'], 'PUT', ordinary_record, token)[0] == 200, 'remove ordinary observation photo')
     map_record['images'] = [image['url']]
     check(request('/map_records/' + map_record['id'], 'PUT', map_record, token)[0] == 200, 'attach photo to public map')
     check(request(image['url'])[1] == png, 'public map photo readable without login')

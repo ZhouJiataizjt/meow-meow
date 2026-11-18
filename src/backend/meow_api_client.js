@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
 const { URL } = require('node:url')
+const { avatarPresets } = require('./cat_avatars')
 /* global AbortSignal */
 
 // Default cloud endpoint. Local mode must be explicitly requested for offline use.
@@ -35,7 +36,7 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
         if (data !== undefined) headers['Content-Type'] = raw ? 'application/octet-stream' : 'application/json'
         const response = await fetch(new URL(base.href.replace(/\/$/, '') + route), {
             method, headers, body: data === undefined ? undefined : raw ? data : JSON.stringify(data),
-            signal: AbortSignal.timeout(15000), redirect: 'error'
+            signal: AbortSignal.timeout(route === '/cat-assistant' ? 22000 : 15000), redirect: 'error'
         })
         if (!response.ok) {
             const error = await response.json().catch(() => ({}))
@@ -48,6 +49,17 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
     }
     function handle(channel, fn) { ipcMain.removeHandler(channel); ipcMain.handle(channel, fn) }
     function requireLogin() { if (!session) throw new Error('请先登录喵喵云端账户') }
+    handle('ask_cat_assistant', async (_event, question) => {
+        try {
+            await ready
+            if (!session) return { error: '请先登录喵喵云端账户', needsLogin: true }
+            return await request('/cat-assistant', 'POST', { question })
+        } catch (error) {
+            if ([404, 405].includes(error.status)) return { error: '当前云端服务尚未启用寻猫小助手' }
+            if (error.status) return { error: error.message, needsLogin: error.status === 401 }
+            return { error: '连接云端失败，请检查网络后重试' }
+        }
+    })
     async function prepare(record) {
         const copy = { ...record }
         if (copy._api_id) copy.id = copy._api_id
@@ -67,7 +79,7 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
             uploaded.push((await request('/uploads', 'POST', buffer)).url)
         }
         if (record.images || record.image) { copy.images = uploaded; copy.image = uploaded[0] || '' }
-        if (record.avatar && !['builtin:cat', 'builtin:cat2'].includes(record.avatar)) {
+        if (record.avatar && !avatarPresets.some(preset => preset.id === record.avatar)) {
             const avatar = await prepare({ images: [record.avatar] })
             copy.avatar = avatar.images[0] || ''
         }
@@ -139,6 +151,22 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
         } finally { seedingDemo = false }
     })
     handle('get_own_map_records', async () => list('map_records', true, true))
+    handle('get_public_observations', async (_event, offset = 0) => {
+        try {
+            const page = await request('/observations?offset=' + encodeURIComponent(offset))
+            const items = page.items.map(record => {
+                const photos = Array.isArray(record.images) && record.images.length ? record.images : [record.image]
+                const photoUrls = photos.filter(url => typeof url === 'string' && /^\/uploads\/[a-f0-9-]{36}$/.test(url))
+                    .map(url => base.href.replace(/\/$/, '') + url)
+                const row = record.kind === 'map_records' ? mapIdentity(record) : record
+                return { ...row, photoUrls }
+            })
+            return { nextOffset: page.nextOffset, items }
+        } catch (error) {
+            if ([404, 405].includes(error.status)) throw new Error('当前云端服务尚未启用公开观察')
+            throw error
+        }
+    })
     handle('is-cloud-enabled', async () => true)
     handle('is-social-enabled', async () => true)
     handle('get-cloud-status', async () => { try { await request('/health'); return true } catch { return false } })

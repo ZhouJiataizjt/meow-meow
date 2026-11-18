@@ -1,0 +1,8 @@
+[
+    { "id": "builtin:cat", "name": "浅杏", "asset": "apricot.svg" },
+    { "id": "builtin:cat2", "name": "雾蓝", "asset": "blue.svg" },
+    { "id": "builtin:mint", "name": "薄荷", "asset": "mint.svg" },
+    { "id": "builtin:lilac", "name": "丁香", "asset": "lilac.svg" },
+    { "id": "builtin:sand", "name": "暖沙", "asset": "sand.svg" },
+    { "id": "builtin:rose", "name": "浅玫", "asset": "rose.svg" }
+]

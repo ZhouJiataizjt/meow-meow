@@ -25,20 +25,20 @@
                 <button class="nav-item active" aria-current="page" data-route="map" type="button">
                     <span class="nav-icon" style="--nav-icon:url('../assets/地图.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/地图.svg" alt="" aria-hidden="true"></span><span class="nav-label">发现地图</span>
                 </button>
+                <button class="nav-item" data-route="public-records" type="button">
+                    <span class="nav-icon" style="--nav-icon:url('../assets/地球.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/地球.svg" alt=""></span><span class="nav-label">公开观察</span>
+                </button>
                 <button class="nav-item" data-route="records" type="button">
                     <span class="nav-icon" style="--nav-icon:url('../assets/订单.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/订单.svg" alt="" aria-hidden="true"></span><span class="nav-label">我的观察记录</span>
                 </button>
                 <button class="nav-item" data-route="cats" type="button">
-                    <span class="nav-icon" style="--nav-icon:url('../assets/猫咪2.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/猫咪.svg" alt="" aria-hidden="true"></span><span class="nav-label">猫咪档案</span>
+                    <span class="nav-icon" style="--nav-icon:url('../assets/icons/cat-profile.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/icons/cat-profile.svg" alt=""></span><span class="nav-label">猫咪档案</span>
                 </button>
                 <button class="nav-item" data-route="stats" type="button">
                     <span class="nav-icon" style="--nav-icon:url('../assets/面-统计面板.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/面-统计面板.svg" alt="" aria-hidden="true"></span><span class="nav-label">统计面板</span>
                 </button>
-                <button class="nav-item" data-route="guide" type="button">
-                    <span class="nav-icon" style="--nav-icon:url('../assets/图鉴-copy-copy.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/图鉴-copy-copy.svg" alt="" aria-hidden="true"></span><span class="nav-label">猫咪图鉴</span>
-                </button>
-                <button class="nav-item" data-route="recommend" type="button">
-                    <span class="nav-icon" style="--nav-icon:url('../assets/icons/compass-mono.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/指南针.svg" alt="" aria-hidden="true"></span><span class="nav-label">今日寻猫</span>
+                <button class="nav-item" data-route="assistant" type="button">
+                    <span class="nav-icon" style="--nav-icon:url('../assets/icons/compass-mono.svg')" aria-hidden="true"><img class="ui-icon" src="../assets/指南针.svg" alt=""></span><span class="nav-label">寻猫小助手</span>
                 </button>
             </nav>
 
@@ -79,6 +79,7 @@
 
     <script>
         const { ipcRenderer } = require('electron')
+        const { safeResourceUrl } = require('../../backend/utils')
 
         const routes = {
             profile: { title: '个人档案', description: '让每一次相遇，都有你的名字', src: 'profile.html', action: null },
@@ -94,28 +95,16 @@
                 src: 'records.html',
                 action: 'add-record'
             },
-            guide: {
-                title: '猫咪图鉴',
-                description: '按地区或名称，了解更多猫咪信息',
-                src: 'cat_select_page.html',
-                action: null
+            'public-records': {
+                title: '公开观察',
+                description: '浏览所有猫友发布的观察记录和地图打卡',
+                src: 'records.html?scope=public',
+                action: 'add-record'
             },
-            'guide-area': {
-                title: '猫咪图鉴 · 地区检索',
-                description: '输入小区、校园或公园，开始检索',
-                src: 'area_search.html',
-                action: null
-            },
-            'guide-name': {
-                title: '猫咪图鉴 · 名称检索',
-                description: '输入猫咪名称或品种，开始检索',
-                src: 'name_search.html',
-                action: null
-            },
-            recommend: {
-                title: '今日寻猫',
-                description: '根据所在地区生成今日观察建议',
-                src: 'recommend.html',
+            assistant: {
+                title: '寻猫小助手',
+                description: '从公开观察里找猫咪、地点和目击时间',
+                src: 'assistant.html',
                 action: null
             },
             cats: {
@@ -140,10 +129,6 @@
         let activeRoute = 'map'
         let accountActionMode = 'login'
 
-        function baseRoute(route) {
-            return route.startsWith('guide-') ? 'guide' : route
-        }
-
         function navigate(route) {
             const config = routes[route] || routes.map
             activeRoute = route
@@ -151,8 +136,8 @@
             description.textContent = config.description
             frame.src = config.src
             document.querySelectorAll('.nav-item').forEach(item => {
-                item.classList.toggle('active', item.dataset.route === baseRoute(route))
-                if (item.dataset.route === baseRoute(route)) item.setAttribute('aria-current', 'page')
+                item.classList.toggle('active', item.dataset.route === route)
+                if (item.dataset.route === route) item.setAttribute('aria-current', 'page')
                 else item.removeAttribute('aria-current')
             })
             primaryAction.style.display = config.action ? 'inline-flex' : 'none'
@@ -187,7 +172,7 @@
         })
 
         primaryAction.addEventListener('click', async () => {
-            if (activeRoute === 'records') await ipcRenderer.invoke('open_add_record_window')
+            if (routes[activeRoute]?.action === 'add-record') await ipcRenderer.invoke('open_add_record_window')
             else if (activeRoute === 'map') {
                 frame.focus()
                 frame.contentWindow?.postMessage({ type: 'start-map-add' }, '*')
@@ -215,6 +200,21 @@
         })
 
         let previousUserId
+        function renderAccountAvatar(avatar) {
+            const button = document.getElementById('account-avatar')
+            const image = document.createElement('img')
+            image.alt = ''
+            const fallback = () => {
+                image.onerror = null
+                image.className = 'ui-icon cat-brand-icon'
+                image.src = '../assets/猫咪2.svg'
+            }
+            if (safeResourceUrl(avatar)) {
+                image.onerror = fallback
+                image.src = avatar
+            } else fallback()
+            button.replaceChildren(image)
+        }
         async function refreshAccount() {
             const cloudEnabled = await ipcRenderer.invoke('is-cloud-enabled')
             const action = document.getElementById('account-action')
@@ -222,7 +222,7 @@
                 const local = await ipcRenderer.invoke('get_current_user_profile')
                 document.getElementById('account-name').textContent = local?.profile?.username || '猫咪观察员'
                 document.getElementById('account-status').textContent = '记录保存在此电脑，无需登录'
-                document.getElementById('account-avatar').innerHTML = '<img class="ui-icon cat-brand-icon" src="../assets/猫咪2.svg" alt="">'
+                renderAccountAvatar(local?.profile?.avatar_url)
                 action.style.display = 'none'
                 return
             }
@@ -245,17 +245,12 @@
                 action.textContent = '退出'
                 action.style.display = 'inline'
                 accountActionMode = 'logout'
-                if (avatar) {
-                    const image = document.createElement('img')
-                    image.src = avatar
-                    image.alt = ''
-                    document.getElementById('account-avatar').replaceChildren(image)
-                }
+                renderAccountAvatar(avatar)
             } else {
                 document.getElementById('account-name').textContent = '未登录'
                 const online = await ipcRenderer.invoke('get-cloud-status').catch(() => true)
                 document.getElementById('account-status').textContent = online ? '云端地图 · 登录后可发布' : '云端连接失败，请检查网络'
-                document.getElementById('account-avatar').innerHTML = '<img class="ui-icon cat-brand-icon" src="../assets/猫咪2.svg" alt="">'
+                renderAccountAvatar(null)
                 action.textContent = '登录'
                 action.style.display = 'inline'
                 accountActionMode = 'login'

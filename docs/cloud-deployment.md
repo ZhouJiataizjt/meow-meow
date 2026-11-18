@@ -8,11 +8,11 @@
 
 未登录可浏览公开地图、照片、点赞数和评论。点击侧栏“登录”，用邮箱格式的账户名注册，密码 8–128 位；目前没有邮箱验证或密码找回。无需使用购物网站账户。按当前要求使用 HTTP，登录信息和会话令牌不加密传输，演示账户应使用独立密码。
 
-- 所有地图观察及所附照片公开，已有云端地图观察也按此规则展示。作者才能编辑、删除观察。
-- 个人观察表和猫咪档案仍按账户隔离。公开地图只展示关联猫咪的名字，不开放猫咪私有备注和用户邮箱。
+- 已有和新增的云端观察记录与地图打卡，以及记录所附的备注和照片，均可在「公开观察」中浏览。该入口无需登录。作者使用「我的观察记录」编辑或删除自己的观察，也可按「缺少具体地点」筛选后补填地点。
+- 猫咪档案仍按账户隔离。公开观察展示关联猫咪的名字，不开放猫咪档案备注和用户邮箱。
 - 登录后可以点赞、取消点赞、评论和删除自己的评论。一名用户对一条观察最多一个赞，评论最多 1000 字，每分钟最多 5 条，每条观察最多 100 条。删除观察自动清理点赞评论。
 - 地图按每页 100 条读取；当前桌面版本最多读取约一万条公开观察。不同账户相同记录 ID 使用复合标识区分。
-- 图片只在被公开观察引用期间允许匿名读取；未引用图片仅上传者可读。设备已经下载的照片缓存不会被远程撤回。
+- 图片只在被普通观察或地图打卡引用期间允许匿名读取；未引用图片仅上传者可读。设备已经下载的照片缓存不会被远程撤回。
 
 旧本地数据保留，不会自动上传。需要离线维护或导出原记录时显式启动：
 
@@ -33,7 +33,13 @@ Remove-Item Env:MEOW_LOCAL_MODE
 - 数据库 `meow_map`，用户 `meow_app@localhost`，仅本库 CRUD、最多 2 个连接。表包括 users、sessions、entries、uploads、likes、comments。
 - 外部配置 `/etc/meow-map/config.json`，root:meow-api、0640。数据库密码随机生成，不进源码。图片目录 `/var/lib/meow-map/uploads`。
 - 密码 scrypt 哈希，会话令牌仅存哈希、7 天有效，登录撤销旧会话。桌面 safeStorage 加密存储登录态，不可加密时只保存在内存。
-- 大模型服务、定时备份与 HTTPS 均按要求跳过，购物网站 SMTP 不受影响。
+- 定时备份与 HTTPS 当前未配置。
+
+## 寻猫小助手
+
+更新桌面端以及云端 `server/index.js`、`server/cat-assistant.js` 和 `data/areas.json`，并安装新版 `meow-api.service`。云端需要 Node.js 18 或更高版本。以 root 创建 `/etc/meow-map/dashscope.env`，权限设为 `0600`，在文件内填写 `DASHSCOPE_API_KEY=新密钥`。默认使用北京工作空间兼容地址和 `qwen3.8-flash`，可在同一文件设置 `DASHSCOPE_BASE_URL` 和 `DASHSCOPE_MODEL`。执行 `sudo systemctl daemon-reload` 和 `sudo systemctl restart meow-api` 后，登录桌面端，打开寻猫小助手并向它询问一条已有的公开打卡。
+
+询问已知大学或校区有哪些猫咪记录时，服务直接统计已标注校园的公开观察，分别列出真实记录和示例打卡，每类最多显示最近 30 条。其他问题会检索最多 12 条真实公开观察，并将问题及候选记录的猫名、标题、地点、区域、品种和观察时间发送给百炼。每个账户每分钟最多提问 5 次，云端同时只处理一个提问。用户可以从回答中定位被引用的地图打卡。
 
 ## 资源限制
 
@@ -56,6 +62,8 @@ free -m
 
 `scripts/smoke-api.cjs` 不设置 API 地址、不建隧道，验证真实 Electron 默认公网连接、注册、照片、档案关联、记录编辑和点赞评论。临时用户 ID 写到已忽略的 artifacts/api-desktop-test.json，结束后需在服务器清理该用户和照片。
 
-服务器更新只覆盖喵喵源码，执行 schema.sql 的建表迁移和语法检查后，仅重启 meow-api。执行 enable-public.py 可更新喵喵 Nginx 路由，校验失败会恢复配置。外部配置与购物网站源码不覆盖。
+服务器更新只覆盖喵喵源码，同时部署 `data/areas.json` 和 `data/cat-avatar-presets.json`。执行 schema.sql 的建表迁移和语法检查后，仅重启 meow-api。执行 enable-public.py 可更新喵喵 Nginx 路由，校验失败会恢复配置。外部配置与购物网站源码不覆盖。
+
+对已有云端观察执行 `mysql meow_map < server/backfill-observation-location.sql`，可将具体地点和标题均为空的条目补为「小谷围大学城」，保留原有坐标。重复执行只会处理仍然缺少地点的条目。
 
 停用：`systemctl disable --now meow-api meow-memory-guard.timer`。此命令不停止 Tomcat、MySQL、Nginx，不删除数据。Nginx 配置保留 before-meow / before-public 时间戳备份。

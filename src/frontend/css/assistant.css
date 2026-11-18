@@ -1,0 +1,143 @@
+.assistant-page {
+    padding: 0;
+    color: var(--app-ink);
+    background: var(--app-page);
+}
+
+.assistant-layout {
+    width: min(100%, 790px);
+    margin: 0 auto;
+    padding: clamp(16px, 4vw, 40px);
+}
+
+.assistant-form,
+.assistant-result {
+    min-width: 0;
+    padding: clamp(16px, 4vw, 28px);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--app-surface);
+}
+
+.assistant-form label,
+.assistant-result h2 {
+    display: block;
+    margin: 0;
+    font-size: 20px;
+    font-weight: 650;
+    text-align: left;
+}
+
+.assistant-form p,
+.assistant-form small,
+.assistant-result small {
+    color: #526c76;
+    line-height: 1.55;
+}
+
+.assistant-form p {
+    margin: 6px 0 16px;
+}
+
+.assistant-form textarea {
+    display: block;
+    width: 100%;
+    min-height: 90px;
+    padding: 12px;
+    border: 1px solid #a7bec6;
+    border-radius: 8px;
+    resize: vertical;
+    font: inherit;
+    color: inherit;
+    background: var(--app-page);
+}
+
+.assistant-form textarea::placeholder {
+    color: #526c76;
+}
+
+.assistant-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 12px 0 16px;
+}
+
+.assistant-layout button {
+    max-width: 100%;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: var(--app-primary);
+    color: var(--app-primary-dark);
+    font: inherit;
+    font-weight: 600;
+}
+
+.assistant-layout button:hover:not(:disabled) {
+    background: #bde2dd;
+}
+
+.assistant-layout .assistant-example {
+    background: var(--app-primary-soft);
+}
+
+.assistant-layout button:disabled {
+    opacity: .6;
+    cursor: wait;
+}
+
+.assistant-layout :focus-visible {
+    outline: 2px solid var(--app-primary-dark);
+    outline-offset: 2px;
+}
+
+.assistant-status {
+    margin: 12px 0;
+}
+
+.assistant-status:empty {
+    display: none;
+}
+
+.assistant-result p {
+    margin: 12px 0 0;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.assistant-result details {
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.assistant-result summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.assistant-result ul {
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.assistant-result li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 0;
+    overflow-wrap: anywhere;
+}
+
+.assistant-result li + li {
+    border-top: 1px solid var(--border-color);
+}
+
+.assistant-result small {
+    display: block;
+}
