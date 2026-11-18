@@ -33,26 +33,26 @@
         .stats-section h3 { text-align: left; margin-bottom: 14px; font-size: 15px; }
 
         .bar-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(0, 36%) minmax(0, 1fr) 4ch;
             align-items: center;
             gap: 10px;
             margin-bottom: 9px;
             font-size: 13px;
         }
-        .bar-name { flex: 0 0 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4a3b33; }
-        .bar-track { flex: 1; background: #f3ece6; border-radius: 8px; height: 18px; overflow: hidden; }
-        .bar-fill { height: 100%; border-radius: 8px; background: linear-gradient(90deg, #f0a58a, #d86f4e); min-width: 4px; }
-        .bar-count { flex: 0 0 34px; text-align: right; color: #8c7b71; }
+        .bar-name { overflow-wrap:anywhere; }
+        .bar-track { border-radius: 8px; height: 10px; overflow: hidden; }
+        .bar-fill { height: 100%; }
+        .bar-count { text-align: right; font-variant-numeric: tabular-nums; }
 
         .month-chart {
-            display: flex;
-            align-items: flex-end;
-            gap: 14px;
-            height: 140px;
-            padding-top: 10px;
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: clamp(3px, 1vw, 12px);
+            height: 176px;
         }
-        .month-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; }
-        .month-plot { flex: 1; display: flex; align-items: flex-end; justify-content: center; width: 100%; margin-top: 18px; }
+        .month-col { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; padding-top: 22px; text-align: center; min-width: 0; }
+        .month-plot { display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--border-color); }
         .month-bar {
             position: relative;
             width: 70%;
@@ -60,7 +60,8 @@
             background: linear-gradient(180deg, #f0a58a, #d86f4e);
             border-radius: 8px 8px 3px 3px;
         }
-        .month-label { font-size: 11px; color: #8c7b71; white-space: nowrap; }
+        .month-label { font-size: 11px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+        .month-label small { display: block; font-size: 10px; }
         .month-count { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px; font-size: 12px; font-weight: 700; color: var(--primary-color); }
 
         .empty-tip { color: #8c7b71; font-size: 13px; text-align: center; padding: 24px 0; }
@@ -166,7 +167,7 @@
             statusElement.textContent=`${isPublic?'公开地图':'我的观察与地图打卡'} · ${all.length} 条记录${includeDemo?'（含 '+activity.demoCount+' 条示例）':'（不含示例）'}；图表仅描述记录分布，不代表猫咪种群数量。`
             document.getElementById('stats-grid').innerHTML=statCard(stats.monthCatsSeen,'本月遇见只次')+statCard(stats.recordCount,'累计记录条数')+statCard(stats.mapCount,'地图打卡')+statCard(isPublic?new Set(mapRecords.filter(r=>r.cat_id).map(r=>r.user_id+':'+r.cat_id)).size:stats.catProfileCount,isPublic?'关联猫咪':'猫咪档案')+statCard(stats.totalCatsSeen,'累计遇见只次')
             const maxMonth=Math.max(...stats.monthly.map(m=>m.count),1)
-            document.getElementById('month-chart').innerHTML=stats.monthly.map(m=>`<div class="month-col" title="${m.month}：${m.count} 条"><div class="month-plot"><div class="month-bar" style="height:${m.count/maxMonth*100}%"><span class="month-count">${m.count||''}</span></div></div><div class="month-label">${m.month}</div></div>`).join('')
+            document.getElementById('month-chart').innerHTML=stats.monthly.map(m=>`<div class="month-col" title="${m.month}：${m.count} 条"><div class="month-plot"><div class="month-bar" style="height:${m.count/maxMonth*100}%"><span class="month-count">${m.count||''}</span></div></div><div class="month-label">${Number(m.month.slice(5))} 月<small>${m.month.slice(0,4)}</small></div></div>`).join('')
             renderBars('top-locations',stats.topLocations)
             renderBars('top-species',stats.topSpecies)
             renderBars('top-areas',activity.campuses)

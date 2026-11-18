@@ -1,0 +1,54 @@
+.map-tools #trajectory-btn {
+    min-height: 36px;
+    padding: 0 12px;
+    margin: 0;
+    border-radius: 4px;
+    color: #48636d;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.map-tools #trajectory-btn:hover { background: #edf6f8; }
+.map-tools #trajectory-btn[aria-expanded="true"] {
+    color: var(--app-primary-dark);
+    background: var(--app-primary-soft);
+}
+
+.trajectory-panel {
+    position: absolute;
+    z-index: 1000;
+    top: 68px;
+    right: 16px;
+    width: min(310px, calc(100% - 70px));
+    padding: 14px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+.trajectory-panel header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.trajectory-panel h2 { margin: 0; font-size: 16px; text-align: left; }
+.trajectory-panel button { margin: 0; min-height: 32px; padding: 0 8px; font-size: 12px; background: var(--bg-color); }
+.trajectory-panel label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.trajectory-panel select { width: 100%; min-width: 0; margin: 0; }
+.trajectory-panel p { margin: 8px 0 0; font-size: 12px; color: #48636d; }
+.trajectory-panel:not([hidden]) ~ #offline-notice { top: auto; bottom: 72px; }
+
+@media (max-width: 600px) {
+    .map-tools #trajectory-btn { padding: 0 8px; }
+    .trajectory-panel { right: 12px; top: 60px; }
+}
+
+@media (max-width: 340px) {
+    .map-tools { display: grid; grid-template-columns: repeat(2, 1fr); }
+    .trajectory-panel { top: 98px; }
+}

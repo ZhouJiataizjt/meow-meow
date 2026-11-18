@@ -101,7 +101,7 @@ app.whenReady().then(()=>{
 })
 
 // 子窗口统一走这个工厂，避免每处重复一份 BrowserWindow 样板配置
-function createChildWindow({ parent = mainWindow, width, height, file, resizable = true, modal = false, webSecurity = false }) {
+function createChildWindow({ parent = mainWindow, width, height, file, query, resizable = true, modal = false, webSecurity = false }) {
     const win = new BrowserWindow({
         width,
         height,
@@ -117,7 +117,7 @@ function createChildWindow({ parent = mainWindow, width, height, file, resizable
         }
     })
     win.setMenu(null)
-    win.loadFile(file)
+    win.loadFile(file, query ? { query } : undefined)
     win.on('ready-to-show', () => win.show())
     return win
 }
@@ -354,12 +354,16 @@ const MAP_RECORDS_FILE = localFiles.map_records
 
 let mapWin
 ipcMain.handle('open_map_window', async (_event, target) => {
-    const locate = () => {
-        if (Number.isFinite(target?.lat) && Number.isFinite(target?.lng)) mapWin.webContents.send('locate-map-record', target)
-    }
+    const hasPosition = Number.isFinite(target?.lat) && Number.isFinite(target?.lng) &&
+        Math.abs(target.lat) <= 90 && Math.abs(target.lng) <= 180
     if (mapWin) {
         mapWin.focus()
-        locate()
+        if (hasPosition) {
+            const contents = mapWin.webContents
+            const locate = () => contents.send('locate-map-record', target)
+            if (contents.isLoadingMainFrame()) contents.once('did-finish-load', locate)
+            else locate()
+        }
         return
     }
     // webSecurity: false 允许地图记录加载本地磁盘上的图片
@@ -367,9 +371,9 @@ ipcMain.handle('open_map_window', async (_event, target) => {
         width: 1000,
         height: 800,
         parent: null,
+        query: hasPosition ? { id: String(target.id ?? ''), lat: String(target.lat), lng: String(target.lng) } : undefined,
         file: path.join(__dirname, '../html/map.html')
     })
-    mapWin.webContents.once('did-finish-load', locate)
     mapWin.on('close', () => mapWin = null)
 })
 

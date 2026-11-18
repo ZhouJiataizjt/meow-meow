@@ -248,6 +248,7 @@
     <link rel="stylesheet" href="../css/light.css">
     <link rel="stylesheet" href="../css/map-detail.css">
     <link rel="stylesheet" href="../css/map-observations.css">
+    <link rel="stylesheet" href="../css/map-trajectory.css">
 </head>
 <body class="map-page">
 
@@ -255,8 +256,18 @@
 <button id="list-btn" onclick="showRecordsList()">观察列表</button>
 <button id="heat-btn" onclick="toggleHeatmap()" title="切换热力图">热力图</button>
 <button id="areas-btn" class="active" onclick="toggleCampusAreas()" title="显示/隐藏高校范围">校园范围</button>
+<button id="trajectory-btn" type="button" aria-expanded="false" aria-controls="trajectory-panel">喵喵轨迹</button>
 
 </div>
+<section id="trajectory-panel" class="trajectory-panel" aria-labelledby="trajectory-title" hidden>
+    <header>
+        <h2 id="trajectory-title">喵喵轨迹</h2>
+        <button id="trajectory-close" type="button" aria-label="关闭喵喵轨迹">关闭</button>
+    </header>
+    <label for="trajectory-cat">猫咪档案</label>
+    <select id="trajectory-cat" disabled><option value="">正在加载地图打卡…</option></select>
+    <p id="trajectory-status" role="status">按观察时间连接地图打卡点，仅供回顾。</p>
+</section>
 <div id="offline-notice">
     <span>地图瓦片加载失败：地图底图需要联网，但你的记录数据仍在本地可用。</span>
     <button onclick="document.getElementById('offline-notice').style.display='none'">知道了</button>
@@ -534,6 +545,95 @@
     let socialEnabled = false;
     let selectedImagePaths = [];
     let currentCluster = null; // 猫点聚合的下钻状态
+    const trajectoryButton = document.getElementById('trajectory-btn');
+    const trajectoryPanel = document.getElementById('trajectory-panel');
+    const trajectorySelect = document.getElementById('trajectory-cat');
+    const trajectoryStatus = document.getElementById('trajectory-status');
+    const trajectoryLayer = L.layerGroup().addTo(map);
+    let trajectories = new Map();
+
+    function refreshTrajectoryOptions() {
+        const selected = trajectorySelect.value;
+        trajectories = new Map();
+        for (const record of allRecords) {
+            if (record.cat_id == null || record.cat_id === '' ||
+                !Number.isFinite(record.lat) || !Number.isFinite(record.lng) ||
+                Math.abs(record.lat) > 90 || Math.abs(record.lng) > 180) continue;
+            const time = parseRecordTime(record);
+            if (!time) continue;
+            const key = JSON.stringify([record.user_id ?? null, String(record.cat_id)]);
+            if (!trajectories.has(key)) {
+                const name = linkedRecordCat(record)?.name || record.cat_name || ('猫咪 ' + String(record.cat_id).slice(-8));
+                const owner = record.profiles?.username;
+                trajectories.set(key, { label: owner ? name + ' · ' + owner : name, points: [] });
+            }
+            trajectories.get(key).points.push({ record, time });
+        }
+        const options = [...trajectories].sort((a, b) => a[1].label.localeCompare(b[1].label, 'zh-CN'));
+        trajectorySelect.replaceChildren(new Option(options.length ? '选择一只猫咪' : '暂无带时间和地点的猫咪打卡', ''));
+        for (const [key, track] of options) {
+            track.points.sort((a, b) => a.time - b.time);
+            trajectorySelect.add(new Option(track.label + '（' + track.points.length + ' 条）', key));
+        }
+        trajectorySelect.value = trajectories.has(selected) ? selected : '';
+        trajectorySelect.disabled = !options.length;
+    }
+
+    function renderTrajectory(fit = false) {
+        trajectoryLayer.clearLayers();
+        const track = trajectoryPanel.hidden ? null : trajectories.get(trajectorySelect.value);
+        if (!track) {
+            trajectoryStatus.textContent = '按观察时间连接地图打卡点，仅供回顾。';
+            renderMarkers(allRecords);
+            return;
+        }
+        const records = track.points.map(point => point.record);
+        const coordinates = records.map(record => [record.lat, record.lng]);
+        const formatDate = time => new Date(time).toLocaleDateString('zh-CN');
+        map.closePopup();
+        renderMarkers(records);
+        markers.forEach((marker, index) => marker.bindTooltip(
+            (index + 1) + ' / ' + records.length + ' · ' + formatDate(track.points[index].time)
+        ));
+        if (coordinates.length > 1) {
+            L.polyline(coordinates, { color: '#286c70', weight: 4, opacity: 0.9, interactive: false }).addTo(trajectoryLayer);
+        }
+        if (fit) {
+            const topPadding = Math.min(trajectoryPanel.getBoundingClientRect().bottom + 20, map.getSize().y / 2);
+            map.fitBounds(L.latLngBounds(coordinates), {
+                paddingTopLeft: [28, topPadding], paddingBottomRight: [28, 28], maxZoom: 17, animate: false
+            });
+        }
+        const exampleCount = records.filter(record => [true, 1, 'true', '1'].includes(record.is_demo)).length;
+        const first = formatDate(track.points[0].time);
+        const last = formatDate(track.points.at(-1).time);
+        const range = first === last ? first : first + ' – ' + last;
+        const summary = records.length === 1 ? '仅有 1 个观察点' : records.length + ' 个观察点 · ' + range;
+        trajectoryStatus.textContent = summary + (exampleCount ? ' · 含 ' + exampleCount + ' 条示例' : '') + '。按观察时间连线。';
+    }
+
+    function setTrajectoryOpen(open, restoreFocus = false) {
+        trajectoryPanel.hidden = !open;
+        trajectoryButton.setAttribute('aria-expanded', String(open));
+        if (open) {
+            if (heatOn) toggleHeatmap();
+            (trajectorySelect.disabled ? document.getElementById('trajectory-close') : trajectorySelect).focus();
+        } else {
+            trajectorySelect.value = '';
+            renderTrajectory();
+            if (restoreFocus) trajectoryButton.focus();
+        }
+    }
+
+    trajectoryButton.addEventListener('click', () => setTrajectoryOpen(trajectoryPanel.hidden, true));
+    document.getElementById('trajectory-close').addEventListener('click', () => setTrajectoryOpen(false, true));
+    trajectorySelect.addEventListener('change', () => {
+        if (locatedHighlight) {
+            map.removeLayer(locatedHighlight);
+            locatedHighlight = null;
+        }
+        renderTrajectory(true);
+    });
 
     function recordPhotos(record) {
         const photos = Array.isArray(record.images) ? record.images.filter(url => safeResourceUrl(url)) : [];
@@ -583,11 +683,15 @@
     // 加载已有记录
     async function loadMapRecords() {
         try {
-            const records = await ipcRenderer.invoke('get_map_records');
-            catProfiles = await ipcRenderer.invoke('get_cats') || [];
+            const [records, cats] = await Promise.all([
+                ipcRenderer.invoke('get_map_records'),
+                ipcRenderer.invoke('get_cats')
+            ]);
+            catProfiles = cats || [];
             if (Array.isArray(records)) {
                 allRecords = records;
-                renderMarkers(allRecords);
+                refreshTrajectoryOptions();
+                renderTrajectory();
                 
                 // Refresh list if visible
                 if (document.getElementById('records-list-container') && 
@@ -642,6 +746,7 @@
     let heatOn = false;
     let heatLayer = null;
     function toggleHeatmap() {
+        if (!heatOn && !trajectoryPanel.hidden) setTrajectoryOpen(false);
         heatOn = !heatOn;
         const btn = document.getElementById('heat-btn');
         btn.classList.toggle('active', heatOn);
@@ -1239,13 +1344,7 @@
         if (!currentDetailRecord) return;
         const targetRecord = currentDetailRecord;
         closeDetailModal();
-        hideRecordsList();
-        map.setView([targetRecord.lat, targetRecord.lng], 15);
-        markers.forEach(marker => {
-            if (marker.recordId === targetRecord.id) {
-                marker.openPopup();
-            }
-        });
+        focusRecordOnMap(targetRecord);
     }
     
     // Edit/Delete stubs
@@ -1288,21 +1387,23 @@
     let locatedHighlight = null;
     async function focusRecordOnMap(target) {
         if (!Number.isFinite(target?.lat) || !Number.isFinite(target?.lng) || Math.abs(target.lat)>90 || Math.abs(target.lng)>180) return;
-        await initialRecords;
+        if (!trajectoryPanel.hidden) setTrajectoryOpen(false);
         if (heatOn) toggleHeatmap();
-        if (!markers.some(item => String(item.recordId) === String(target.id))) await loadMapRecords();
         hideRecordsList();
-        map.setView([target.lat, target.lng], 18);
-        const marker = markers.find(item => String(item.recordId) === String(target.id));
+        map.setView([target.lat, target.lng], 18, { animate: false });
         if (locatedHighlight) map.removeLayer(locatedHighlight);
-        locatedHighlight = L.circleMarker([target.lat, target.lng], { radius: 22, color: '#367f83', weight: 2, fillOpacity: 0.08 }).addTo(map);
-        if (marker) marker.openPopup();
+        const highlight = L.circleMarker([target.lat, target.lng], { radius: 22, color: '#367f83', weight: 2, fillOpacity: 0.08, interactive: false }).addTo(map);
+        locatedHighlight = highlight;
+        await initialRecords;
+        if (locatedHighlight === highlight && trajectoryPanel.hidden && !heatOn) {
+            markers.find(item => String(item.recordId) === String(target.id))?.openPopup();
+        }
     }
-    window.addEventListener('message', event => {
-        if (event.source === window.parent && event.data?.type === 'focus-map-record') focusRecordOnMap(event.data.record);
-    });
     ipcRenderer.on('locate-map-record', (_event, target) => focusRecordOnMap(target));
-    window.parent.postMessage({ type: 'map-ready' }, '*');
+    const mapSearch = new URLSearchParams(location.search);
+    if (mapSearch.get('lat')?.trim() && mapSearch.get('lng')?.trim()) {
+        focusRecordOnMap({ id: mapSearch.get('id'), lat: Number(mapSearch.get('lat')), lng: Number(mapSearch.get('lng')) });
+    }
 </script>
 </body>
 </html>

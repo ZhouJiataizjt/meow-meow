@@ -1,6 +1,6 @@
 {
   "name": "meow-meow-map",
-  "version": "2.0.0",
+  "version": "2.3.0",
   "description": "A cat discovery map for recording and sharing cat sightings",
   "main": "src/frontend/js/main.js",
   "scripts": {
@@ -41,7 +41,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "warningsAsErrors": false,
-      "artifactName": "meow-meow-map_Setup.exe",
+      "artifactName": "meow-meow-map-${version}-win-${arch}-Setup.exe",
       "installerHeaderIcon": "src/frontend/assets/favicon.ico"
     },
     "buildDependenciesFromSource": false,
@@ -52,10 +52,6 @@
         "to": "."
       }
     ]
-  },
-  "directories": {
-    "doc": "docs",
-    "test": "test"
   },
   "repository": {
     "type": "git",

@@ -2,158 +2,107 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>用户登录/注册</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录喵喵地图</title>
     <link rel="icon" href="../assets/favicon.ico">
     <link rel="stylesheet" href="../css/common.css">
-    <link rel="stylesheet" href="../css/icons.css">
-    <style>
-        .auth-container {
-            max-width: 400px;
-            margin: 50px auto;
-            padding: 30px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: var(--shadow);
-        }
-        .tabs {
-            display: flex;
-            margin-bottom: 20px;
-            border-bottom: 1px solid #eee;
-        }
-        .tab {
-            flex: 1;
-            text-align: center;
-            padding: 10px;
-            cursor: pointer;
-            color: #666;
-        }
-        .tab.active {
-            color: var(--accent-color);
-            border-bottom: 2px solid var(--accent-color);
-            font-weight: bold;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        .error-msg {
-            color: #e74c3c;
-            font-size: 14px;
-            margin-top: 10px;
-            text-align: center;
-            min-height: 20px;
-        }
-        input {
-            width: 100%;
-            padding: 10px;
-            box-sizing: border-box;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-        input:focus {
-            border-color: var(--accent-color);
-            outline: none;
-        }
-    </style>
     <link rel="stylesheet" href="../css/light.css">
+    <style>
+        .auth-page { display:grid; place-items:center; min-height:100vh; padding:24px; }
+        .auth-card { width:min(100%, 392px); padding:28px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:16px; }
+        .auth-heading { display:flex; gap:12px; align-items:center; margin-bottom:22px; }
+        .auth-heading img { width:48px; height:48px; border-radius:12px; flex:none; }
+        .auth-heading h1 { font-size:22px; line-height:1.2; margin:0; text-align:left; }
+        .auth-heading p { margin:4px 0 0; font-size:13px; color:var(--muted-color); }
+        .auth-switch { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; background:var(--bg-color); padding:4px; border-radius:9px; margin-bottom:20px; }
+        .auth-switch button { background:transparent; color:var(--primary-color); margin:0; border:1px solid transparent; min-height:36px; border-radius:6px; padding:0 8px; }
+        .auth-switch button:hover { background:var(--app-primary-soft); }
+        .auth-switch button[aria-pressed="true"] { background:white; color:var(--app-primary-dark); border-color:var(--border-color); }
+        .auth-field { display:grid; gap:6px; font-size:13px; font-weight:600; margin-bottom:14px; }
+        .auth-field input { box-sizing:border-box; width:100%; margin:0; }
+        .auth-submit { width:100%; margin:4px 0 0; min-height:42px; }
+        .auth-card button:disabled { opacity:.65; cursor:wait; }
+        .auth-message { margin:12px 0 0; min-height:20px; font-size:13px; color:var(--app-primary-dark); overflow-wrap:anywhere; }
+        .auth-message.error { color:#a34342; }
+        @media (max-width:360px) { .auth-page { padding:14px; } .auth-card { padding:20px; } }
+    </style>
 </head>
-<body>
-    <div class="auth-container">
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('login')">登录</div>
-            <div class="tab" onclick="switchTab('register')">注册</div>
+<body class="auth-page">
+    <main class="auth-card" aria-labelledby="auth-title">
+        <header class="auth-heading">
+            <img src="../assets/cat-avatars/mint.svg" alt="">
+            <div><h1 id="auth-title">喵喵地图</h1><p>登录后可发布和同步观察记录</p></div>
+        </header>
+        <div class="auth-switch" role="group" aria-label="账号操作">
+            <button type="button" data-mode="login" aria-pressed="true">登录</button>
+            <button type="button" data-mode="register" aria-pressed="false">注册</button>
         </div>
-
-        <div id="login-form">
-            <div class="form-group">
-                <label>邮箱</label>
-                <input type="text" id="login-email" placeholder="请输入邮箱">
-            </div>
-            <div class="form-group">
-                <label>密码</label>
-                <input type="password" id="login-password" placeholder="请输入密码">
-            </div>
-            <button class="w-100" onclick="handleLogin()">登录</button>
-        </div>
-
-        <div id="register-form" style="display: none;">
-            <div class="form-group">
-                <label>邮箱</label>
-                <input type="text" id="reg-email" placeholder="请输入邮箱">
-            </div>
-            <div class="form-group">
-                <label>密码</label>
-                <input type="password" id="reg-password" placeholder="设置密码 (至少8位)">
-            </div>
-            <button class="w-100" onclick="handleRegister()">注册</button>
-        </div>
-
-        <div id="message" class="error-msg"></div>
-    </div>
-
+        <form id="auth-form">
+            <label class="auth-field">邮箱<input type="email" id="auth-email" name="email" autocomplete="username" placeholder="name@example.com" required></label>
+            <label class="auth-field">密码<input type="password" id="auth-password" name="password" autocomplete="current-password" required></label>
+            <button id="auth-submit" class="auth-submit" type="submit">登录</button>
+        </form>
+        <p id="message" class="auth-message" role="status"></p>
+    </main>
     <script>
-        const { ipcRenderer } = require('electron');
+        const { ipcRenderer } = require('electron')
+        const form = document.getElementById('auth-form')
+        const email = document.getElementById('auth-email')
+        const password = document.getElementById('auth-password')
+        const submit = document.getElementById('auth-submit')
+        const message = document.getElementById('message')
+        const switches = [...document.querySelectorAll('[data-mode]')]
+        let mode = 'login'
 
-        function switchTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('message').innerText = '';
-            
-            if (tab === 'login') {
-                document.querySelector('.tab:nth-child(1)').classList.add('active');
-                document.getElementById('login-form').style.display = 'block';
-                document.getElementById('register-form').style.display = 'none';
-            } else {
-                document.querySelector('.tab:nth-child(2)').classList.add('active');
-                document.getElementById('login-form').style.display = 'none';
-                document.getElementById('register-form').style.display = 'block';
-            }
+        function status(text, error = false) {
+            message.textContent = text
+            message.classList.toggle('error', error)
         }
 
-        async function handleLogin() {
-            const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-password').value;
-            const msg = document.getElementById('message');
-
-            if (!email || !password) {
-                msg.innerText = '请填写完整信息';
-                return;
-            }
-
-            msg.innerText = '登录中...';
-            const result = await ipcRenderer.invoke('auth-login', { email, password });
-            
-            if (result.success) {
-                msg.style.color = 'green';
-                msg.innerText = '登录成功！';
-                setTimeout(() => window.close(), 1000);
-            } else {
-                msg.style.color = '#e74c3c';
-                msg.innerText = result.error;
-            }
+        function setMode(nextMode) {
+            if (mode === nextMode) return
+            mode = nextMode
+            const registering = mode === 'register'
+            switches.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)))
+            password.value = ''
+            password.autocomplete = registering ? 'new-password' : 'current-password'
+            password.placeholder = registering ? '至少 8 位' : ''
+            if (registering) password.minLength = 8
+            else password.removeAttribute('minlength')
+            submit.textContent = registering ? '创建账号' : '登录'
+            status('')
         }
 
-        async function handleRegister() {
-            const email = document.getElementById('reg-email').value;
-            const password = document.getElementById('reg-password').value;
-            const msg = document.getElementById('message');
-
-            if (!email || !password) {
-                msg.innerText = '请填写完整信息';
-                return;
+        switches.forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)))
+        form.addEventListener('submit', async event => {
+            event.preventDefault()
+            if (submit.disabled) return
+            const signingIn = mode === 'login'
+            const credentials = { email: email.value.trim(), password: password.value }
+            const controls = [email, password, submit, ...switches]
+            controls.forEach(control => { control.disabled = true })
+            status(signingIn ? '正在登录…' : '正在创建账号…')
+            let closing = false
+            try {
+                const result = await ipcRenderer.invoke(signingIn ? 'auth-login' : 'auth-register', credentials)
+                if (!result?.success) throw new Error(result?.error || '请稍后重试')
+                if (signingIn) {
+                    closing = true
+                    status('登录成功')
+                    setTimeout(() => window.close(), 400)
+                } else {
+                    setMode('login')
+                    status('账号已创建，请使用刚设置的密码登录。')
+                }
+            } catch (error) {
+                status(error.message, true)
+            } finally {
+                if (!closing) {
+                    controls.forEach(control => { control.disabled = false })
+                    if (!password.value) password.focus()
+                }
             }
-
-            msg.innerText = '注册中...';
-            const result = await ipcRenderer.invoke('auth-register', { email, password });
-            
-            if (result.success) {
-                msg.style.color = 'green';
-                msg.innerText = '注册成功！请登录。';
-                setTimeout(() => switchTab('login'), 1500);
-            } else {
-                msg.style.color = '#e74c3c';
-                msg.innerText = result.error;
-            }
-        }
+        })
     </script>
 </body>
 </html>

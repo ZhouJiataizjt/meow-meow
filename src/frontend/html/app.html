@@ -53,7 +53,7 @@
             </div>
 
             <div class="account-card">
-                <button class="account-avatar" id="account-avatar" type="button" aria-label="打开个人档案" title="个人档案"><img class="ui-icon cat-brand-icon" src="../assets/猫咪2.svg" alt="" aria-hidden="true"></button>
+                <button class="account-avatar" id="account-avatar" type="button" aria-label="打开个人档案" title="个人档案"><img src="../assets/cat-avatars/mint.svg" alt=""></button>
                 <div class="account-copy">
                     <div class="account-name" id="account-name">本地模式</div>
                     <div class="account-status" id="account-status">记录保存在本机</div>
@@ -80,6 +80,7 @@
     <script>
         const { ipcRenderer } = require('electron')
         const { safeResourceUrl } = require('../../backend/utils')
+        const { defaultCatAvatar } = require('../../backend/cat_avatars')
 
         const routes = {
             profile: { title: '个人档案', description: '让每一次相遇，都有你的名字', src: 'profile.html', action: null },
@@ -129,12 +130,12 @@
         let activeRoute = 'map'
         let accountActionMode = 'login'
 
-        function navigate(route) {
+        function navigate(route, search = '') {
             const config = routes[route] || routes.map
             activeRoute = route
             title.textContent = config.title
             description.textContent = config.description
-            frame.src = config.src
+            frame.src = config.src + search
             document.querySelectorAll('.nav-item').forEach(item => {
                 item.classList.toggle('active', item.dataset.route === route)
                 if (item.dataset.route === route) item.setAttribute('aria-current', 'page')
@@ -146,20 +147,21 @@
         }
 
         document.getElementById('edit-profile').addEventListener('click', () => navigate('profile'))
-        document.getElementById('account-avatar').addEventListener('click', () => navigate('profile'))
+        const accountAvatar = document.getElementById('account-avatar')
+        const accountCard = accountAvatar.closest('.account-card')
+        const editProfile = document.getElementById('edit-profile')
+        accountAvatar.addEventListener('click', () => {
+            if (accountCard.classList.contains('is-guest')) ipcRenderer.invoke('open_login_window')
+            else navigate('profile')
+        })
         window.appNavigate = navigate
-        let pendingMapTarget = null
         window.addEventListener('message', event => {
             if (event.source !== frame.contentWindow) return
             if (event.data?.type === 'locate-record') {
                 const target = event.data.record
                 if (!Number.isFinite(target?.lat) || !Number.isFinite(target?.lng) || Math.abs(target.lat)>90 || Math.abs(target.lng)>180) return
-                pendingMapTarget = target
-                navigate('map')
-            }
-            if (event.data?.type === 'map-ready' && pendingMapTarget) {
-                frame.contentWindow.postMessage({ type: 'focus-map-record', record: pendingMapTarget }, '*')
-                pendingMapTarget = null
+                const search = new URLSearchParams({ id: target.id ?? '', lat: target.lat, lng: target.lng })
+                navigate('map', '?' + search)
             }
             if (event.data && event.data.type === 'navigate') navigate(event.data.route)
             if (event.data?.type === 'profile-updated') refreshAccount()
@@ -200,20 +202,24 @@
         })
 
         let previousUserId
-        function renderAccountAvatar(avatar) {
-            const button = document.getElementById('account-avatar')
+        function renderAccountAvatar(avatar, userId) {
             const image = document.createElement('img')
             image.alt = ''
             const fallback = () => {
                 image.onerror = null
-                image.className = 'ui-icon cat-brand-icon'
-                image.src = '../assets/猫咪2.svg'
+                image.src = defaultCatAvatar(userId || 'guest')
             }
             if (safeResourceUrl(avatar)) {
                 image.onerror = fallback
                 image.src = avatar
             } else fallback()
-            button.replaceChildren(image)
+            accountAvatar.replaceChildren(image)
+        }
+        function setGuestMode(guest) {
+            accountCard.classList.toggle('is-guest', guest)
+            editProfile.hidden = guest
+            accountAvatar.title = guest ? '登录喵喵地图' : '个人档案'
+            accountAvatar.setAttribute('aria-label', accountAvatar.title)
         }
         async function refreshAccount() {
             const cloudEnabled = await ipcRenderer.invoke('is-cloud-enabled')
@@ -221,8 +227,9 @@
             if (!cloudEnabled) {
                 const local = await ipcRenderer.invoke('get_current_user_profile')
                 document.getElementById('account-name').textContent = local?.profile?.username || '猫咪观察员'
-                document.getElementById('account-status').textContent = '记录保存在此电脑，无需登录'
-                renderAccountAvatar(local?.profile?.avatar_url)
+                document.getElementById('account-status').textContent = '记录保存在本机'
+                setGuestMode(false)
+                renderAccountAvatar(local?.profile?.avatar_url, local?.id)
                 action.style.display = 'none'
                 return
             }
@@ -231,6 +238,7 @@
             const userId = current?.id || null
             if (previousUserId !== undefined && userId !== previousUserId) frame.contentWindow?.location.reload()
             previousUserId = userId
+            setGuestMode(!current)
             if (current) {
                 let displayName = current.email || '已登录用户'
                 let avatar = null
@@ -245,11 +253,11 @@
                 action.textContent = '退出'
                 action.style.display = 'inline'
                 accountActionMode = 'logout'
-                renderAccountAvatar(avatar)
+                renderAccountAvatar(avatar, userId)
             } else {
                 document.getElementById('account-name').textContent = '未登录'
                 const online = await ipcRenderer.invoke('get-cloud-status').catch(() => true)
-                document.getElementById('account-status').textContent = online ? '云端地图 · 登录后可发布' : '云端连接失败，请检查网络'
+                document.getElementById('account-status').textContent = online ? '登录后可发布' : '云端连接失败'
                 renderAccountAvatar(null)
                 action.textContent = '登录'
                 action.style.display = 'inline'

@@ -1,44 +1,29 @@
-# 阿里云 ECS 服务器管理指南
+# 喵喵地图服务器运维
 
-## 1. 关机与重启
-如果您暂时不需要使用加速服务，可以在阿里云控制台对服务器进行操作以节省费用（如果是按量付费实例）。
+喵喵 API 部署在阿里云 ECS 上，与同机其他应用共用 Nginx。维护时优先对喵喵服务执行单独检查或重启。
 
-### 关机（停止实例）
-1. 登录 [阿里云 ECS 控制台](https://ecs.console.aliyun.com/)。
-2. 找到您的实例，点击 **“停止”**。
-3. **注意**：
-   - **按量付费实例**：选择“停止后不收费”模式（计算资源不收费，但云盘和公网 IP 可能仍会产生少量费用）。
-   - **包年包月实例**：关机不会退费，只是暂停运行。
+## 检查服务
 
-### 开机（启动实例）
-1. 在控制台找到已停止的实例，点击 **“启动”**。
-2. 等待状态变为 **“运行中”**。
+在服务器上检查 Nginx、MySQL、喵喵 API 和内存守护定时器：
 
----
-
-## 2. 重启后的操作
-通常情况下，Linux 服务器重启后，Nginx 服务会 **自动启动**，您**不需要**进行任何额外操作。
-
-### 如何验证服务是否正常？
-服务器启动后，您可以在本地电脑的终端运行以下命令测试：
-```powershell
-curl.exe -I http://47.239.40.54
-```
-如果返回 `HTTP/1.1 404 Not Found` 或 `200 OK`，说明服务已自动恢复，可以直接使用软件。
-
-### 如果服务没有自动启动（罕见情况）
-如果测试连接失败（超时），您可以登录服务器执行以下命令手动启动：
 ```bash
-# 启动 Nginx
-sudo systemctl start nginx
-
-# 设置开机自启（防止下次重启又没启动）
-sudo systemctl enable nginx
+sudo systemctl status nginx mysql meow-api meow-memory-guard.timer --no-pager
+curl -fsS http://127.0.0.1:8091/health
+sudo journalctl -u meow-api -n 50 --no-pager
 ```
 
----
+在客户端验证公网入口。健康接口返回 `ok: true`，并检查数据库是否可用。
 
-## 3. 公网 IP 变化问题（重要！）
-- **固定带宽**：如果您购买的是固定带宽，重启后 IP 地址通常**不会变**。
-- **按量付费（停机不收费）**：如果您选择了“停机不收费”模式，再次启动时，**公网 IP 地址可能会发生变化**。
-  - **如果 IP 变了**：您需要去 `src/backend/supabase_config.js` 中更新 `SUPABASE_URL` 为新的 IP 地址。
+```powershell
+curl.exe -fsS http://8.148.216.205/meow-api/health
+```
+
+本机健康检查成功而公网检查失败时，检查 Nginx 的 `/meow-api/` 路由、ECS 安全组和公网地址。修改过 Nginx 配置时，先执行 `sudo nginx -t`，通过后执行 `sudo systemctl reload nginx`。
+
+## 重启与地址变更
+
+更新喵喵 API 的源码或百炼配置后，可用 `sudo systemctl restart meow-api` 应用变更。替换过 systemd unit 文件时，先运行 `sudo systemctl daemon-reload`，再重启服务并验证健康接口。
+
+停用整台 ECS 会一并中断同机其他服务。实例启动后，应逐项核对服务状态和公网健康接口。若公网地址调整，源码运行可通过 `MEOW_API_URL` 指向新地址。更新默认地址的位置在 `src/backend/meow_api_client.js`，使用内置地址的安装包需要重新构建。
+
+部署目录、数据库迁移、百炼环境变量和资源限制见 [云端部署](cloud-deployment.md)。

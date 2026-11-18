@@ -12,7 +12,7 @@
 <body class="profile-page">
     <main class="profile-layout">
         <aside class="profile-identity">
-            <img id="identity-avatar" src="../assets/猫咪2.svg" alt="个人头像">
+            <img id="identity-avatar" src="../assets/cat-avatars/mint.svg" alt="个人头像">
             <div class="profile-identity-caption">
                 <h2 id="identity-name">猫咪观察员</h2>
                 <p id="identity-mode">你的观察者档案</p>
@@ -46,6 +46,7 @@
     <script>
         const { ipcRenderer } = require('electron')
         const { safeResourceUrl } = require('../../backend/utils')
+        const { defaultCatAvatar } = require('../../backend/cat_avatars')
         const nameField = document.getElementById('profile-name')
         const saveButton = document.getElementById('profile-save')
         const message = document.getElementById('profile-message')
@@ -66,13 +67,11 @@
         }
         function renderAvatar() {
             const custom = Boolean(safeResourceUrl(draftAvatar))
-            avatarImage.src = custom ? draftAvatar : '../assets/猫咪2.svg'
-            avatarImage.classList.toggle('has-photo', custom)
+            avatarImage.src = custom ? draftAvatar : defaultCatAvatar(currentId || 'guest')
         }
         avatarImage.addEventListener('error', () => {
-            if (!avatarImage.classList.contains('has-photo')) return
-            avatarImage.classList.remove('has-photo')
-            avatarImage.src = '../assets/猫咪2.svg'
+            const fallback = defaultCatAvatar(currentId || 'guest')
+            if (avatarImage.getAttribute('src') !== fallback) avatarImage.src = fallback
         })
         function updateControls() {
             const busy = saving || choosing

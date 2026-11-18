@@ -103,7 +103,15 @@ app.whenReady().then(async()=>{
  await delay(300)
  assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'data/cats.json'),'utf8'))[0].avatar,'builtin:cat2')
  const avatarFile=path.join(directory,'avatar.png')
- fs.writeFileSync(avatarFile,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5V0AAAAASUVORK5CYII=','base64'))
+ const avatarData = await win.webContents.executeJavaScript(`(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 32;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#367f83';
+    context.fillRect(0, 0, 32, 32);
+    return canvas.toDataURL('image/png').split(',')[1];
+ })()`)
+ fs.writeFileSync(avatarFile,Buffer.from(avatarData,'base64'))
  await catsFrame.executeJavaScript(`openCatForm(cats.find(cat=>cat.id==='cat-orange')); setCatAvatar(${JSON.stringify(avatarFile)}); saveCat()`)
  await delay(300)
  const avatarCat=JSON.parse(fs.readFileSync(path.join(directory,'data/cats.json'),'utf8'))[0]
@@ -120,6 +128,25 @@ app.whenReady().then(async()=>{
    return {lat:map.getCenter().lat,lng:map.getCenter().lng,zoom:map.getZoom()}
  })()`)
  assert.equal(target.zoom,18);assert.ok(Math.abs(target.lat-23.05)<.002)
+ await mapFrame.executeJavaScript(`document.getElementById('trajectory-btn').click();
+    const option = [...trajectorySelect.options].find(option => option.text.startsWith('月亮'));
+    trajectorySelect.value = option.value; trajectorySelect.dispatchEvent(new Event('change'));`)
+ assert.deepEqual(await mapFrame.executeJavaScript(`(() => {
+    const line = trajectoryLayer.getLayers()[0];
+    const points = line.getLatLngs();
+    return { count: points.length, ordered: points[0].lat < points[1].lat && points[1].lat < points[2].lat, markers: markers.length };
+ })()`), { count: 3, ordered: true, markers: 3 })
+ await delay(180)
+ fs.writeFileSync(path.join(output,'map-trajectory.png'),(await win.webContents.capturePage()).toPNG())
+ await mapFrame.executeJavaScript(`document.getElementById('trajectory-close').click()`)
+ assert.equal(await mapFrame.executeJavaScript(`trajectoryLayer.getLayers().length === 0 && markers.length === allRecords.length`),true)
+ await win.webContents.executeJavaScript(`appNavigate('public-records')`); await delay(300)
+ const publicMapFrame = win.webContents.mainFrame.frames[0]
+ await publicMapFrame.executeJavaScript(`loadRecords(true)`)
+ await publicMapFrame.executeJavaScript(`document.querySelector('.locateBtn').click()`)
+ await delay(400)
+ mapFrame = win.webContents.mainFrame.frames[0]
+ assert.equal(await mapFrame.executeJavaScript(`locatedHighlight?.getLatLng().lat`), mapRecords[0].lat)
  await win.webContents.executeJavaScript(`appNavigate('stats')`); await delay(350)
  let statsFrame=win.webContents.mainFrame.frames[0]
  const seeded=await statsFrame.executeJavaScript(`ipcRenderer.invoke('seed_campus_demo')`)
@@ -132,6 +159,17 @@ app.whenReady().then(async()=>{
  const monthly=await statsFrame.executeJavaScript(`Array.from(document.querySelectorAll('.month-bar'), bar => ({ count:Number(bar.textContent), height:bar.getBoundingClientRect().height }))`)
  const tallest=monthly.reduce((maximum, bar) => bar.count > maximum.count ? bar : maximum)
  assert.ok(tallest.height > 0 && monthly.every(bar => Math.abs(bar.height - tallest.height * bar.count / tallest.count) < 1))
+ for (const width of [480, 1280]) {
+  win.setSize(width, 900); await delay(180)
+  assert.equal(await statsFrame.executeJavaScript(`(() => {
+    const chart = document.querySelector('.month-chart').getBoundingClientRect();
+    return [...document.querySelectorAll('.month-col')].every(column => {
+      const rect = column.getBoundingClientRect();
+      return rect.left >= chart.left && rect.right <= chart.right + 1;
+    }) && [...document.querySelectorAll('.bar-fill')].every(bar =>
+      bar.closest('.bar-row').querySelector('.bar-count').textContent !== '0' || bar.getBoundingClientRect().width === 0);
+  })()`),true)
+ }
  await statsFrame.executeJavaScript(`document.getElementById('include-demo').checked=false; loadStats()`)
  assert.equal(await statsFrame.executeJavaScript(`document.querySelectorAll('.stat-value')[1].textContent`),'18')
  await statsFrame.executeJavaScript(`document.getElementById('include-demo').checked=true; loadStats()`)
@@ -140,6 +178,9 @@ app.whenReady().then(async()=>{
   await statsFrame.executeJavaScript(`window.scrollTo(0,${scroll})`);await delay(120)
   fs.writeFileSync(path.join(output,`stats-${name}.png`),(await win.webContents.capturePage()).toPNG())
  }
+ await statsFrame.executeJavaScript(`document.getElementById('month-chart').closest('.stats-section').scrollIntoView({block:'center'})`)
+ await delay(180)
+ fs.writeFileSync(path.join(output,'stats-monthly.png'),(await win.webContents.capturePage()).toPNG())
  await win.webContents.executeJavaScript(`appNavigate('profile')`); await delay(300)
  let frame=win.webContents.mainFrame.frames[0]
  const initial=await frame.executeJavaScript(`document.getElementById('profile-id').value`)
@@ -176,7 +217,9 @@ app.whenReady().then(async()=>{
  await frame.executeJavaScript(`document.getElementById('profile-avatar-reset').click(); document.getElementById('profile-save').click()`)
  await delay(220)
  assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'observer-profile.json'),'utf8')).profile.avatar_url, null)
- assert.match(await win.webContents.executeJavaScript(`document.querySelector('#account-avatar img').className`), /cat-brand-icon/)
+ const defaultAvatar = await win.webContents.executeJavaScript(`document.querySelector('#account-avatar img').src`)
+ assert.match(defaultAvatar, /cat-avatars\/[a-z]+\.svg$/)
+ assert.equal(await frame.executeJavaScript(`document.getElementById('identity-avatar').src`), defaultAvatar)
 
  ipcMain.removeHandler('is-social-enabled')
  ipcMain.handle('is-social-enabled', async () => true)
@@ -224,8 +267,8 @@ app.whenReady().then(async()=>{
     document.querySelector('.detail-photo').click()
  })()`)
  assert.equal(await detailFrame.executeJavaScript(`document.querySelector('#lightbox img').getAttribute('src')`), '../assets/cat-avatars/mint.svg')
- await detailFrame.executeJavaScript(`closeLightbox(); document.getElementById('detail-close').click();
-    map.setView([allRecords[0].lat, allRecords[0].lng], 18, {animate:false})`)
+ await detailFrame.executeJavaScript(`closeLightbox(); document.querySelector('.detail-location').click()`)
+ assert.equal(await detailFrame.executeJavaScript(`locatedHighlight?.getLatLng().lat === allRecords[0].lat && map.getZoom() === 18`),true)
  await delay(180)
  fs.writeFileSync(path.join(output,'map-avatar-pins-compact.png'),(await win.webContents.capturePage()).toPNG())
  await detailFrame.executeJavaScript(`showRecordsList()`)
@@ -256,8 +299,27 @@ app.whenReady().then(async()=>{
  await avatarFrame.executeJavaScript(`saveCat()`)
  await delay(300)
  assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'data/cats.json'),'utf8'))[1].avatar,'builtin:mint')
+ await win.webContents.executeJavaScript(`ipcRenderer.invoke('open_login_window')`)
+ await delay(350)
+ const login = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/login.html'))
+ assert.ok(login)
+ assert.equal(await login.webContents.executeJavaScript(`(() => {
+    document.querySelector('[data-mode="register"]').click();
+    const registerReady = password.minLength === 8 && password.autocomplete === 'new-password';
+    document.querySelector('[data-mode="login"]').click();
+    return registerReady && password.autocomplete === 'current-password' && form.scrollWidth === form.clientWidth;
+ })()`),true)
+ fs.writeFileSync(path.join(output,'login.png'),(await login.webContents.capturePage()).toPNG())
+ login.close()
+ ipcMain.removeHandler('is-cloud-enabled')
+ ipcMain.handle('is-cloud-enabled', async () => true)
+ ipcMain.handle('get-cloud-status', async () => true)
+ win.setSize(1024, 800)
+ await win.webContents.executeJavaScript(`refreshAccount()`)
+ assert.equal(await win.webContents.executeJavaScript(`accountCard.classList.contains('is-guest') && editProfile.hidden`),true)
+ fs.writeFileSync(path.join(output,'account-guest.png'),(await win.webContents.capturePage()).toPNG())
  fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2))
- console.log(`PASS: ${report.length} responsive views, observation filters and clusters, cat-avatar markers, detail photos, six cat avatar presets, personal avatar persistence and reset, assistant citations, records editing and chart filters`)
+ console.log(`PASS: ${report.length} responsive views, one-click map location, chronological cat tracks, observation filters, avatar persistence and reset, login modes, assistant citations, records editing and chart alignment`)
  app.exit(0)
  } catch(error){console.error(error);app.exit(1)}
 })
