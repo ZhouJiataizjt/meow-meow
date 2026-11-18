@@ -1,0 +1,9 @@
+[Unit]
+Description=Stop optional Meow API when host memory is low
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /srv/projects/meow-map/server/memory-guard.sh
+MemoryMax=16M
+CPUQuota=5%
+NoNewPrivileges=true

@@ -1,0 +1,38 @@
+[Unit]
+Description=Meow Map lightweight API
+After=network.target mysql.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=meow-api
+Group=meow-api
+WorkingDirectory=/srv/projects/meow-map/server
+Environment=NODE_ENV=production
+Environment=UV_THREADPOOL_SIZE=1
+Environment=MEOW_CONFIG=/etc/meow-map/config.json
+ExecStart=/usr/bin/node --max-old-space-size=64 index.js
+Restart=on-failure
+RestartSec=10
+MemoryAccounting=true
+MemoryHigh=144M
+MemoryMax=192M
+MemorySwapMax=64M
+CPUQuota=50%
+TasksMax=24
+LimitNOFILE=256
+OOMScoreAdjust=500
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/meow-map
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target

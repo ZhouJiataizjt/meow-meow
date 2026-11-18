@@ -35,14 +35,14 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "favicon.ico"
+      "icon": "src/frontend/assets/favicon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "warningsAsErrors": false,
       "artifactName": "meow-meow-map_Setup.exe",
-      "installerHeaderIcon": "favicon.ico"
+      "installerHeaderIcon": "src/frontend/assets/favicon.ico"
     },
     "buildDependenciesFromSource": false,
     "forceCodeSigning": false,

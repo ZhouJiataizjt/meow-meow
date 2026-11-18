@@ -4,6 +4,11 @@ const fs = require('fs')
 const axios = require('axios')
 const { createClient } = require('@supabase/supabase-js')
 const { SUPABASE_URL, SUPABASE_KEY } = require('../../backend/supabase_config')
+const { profileUpdate, localProfile } = require('../../backend/user_profile')
+const LOCAL_PROFILE_FILE = path.join(app.getPath('userData'), 'observer-profile.json')
+const { normalizeCat } = require('../../backend/cat_profile')
+const { initializeLocalStore } = require('../../backend/local_store')
+const { randomUUID } = require('crypto')
 const { findRecordIndex } = require('../../backend/utils')
 const { compressImageForUpload } = require('../../backend/image_utils')
 
@@ -45,7 +50,7 @@ const customStorage = {
 }
 
 const isPlaceholder = (value) => !value || /^(your|ignore|replace|待配置)/i.test(String(value).trim())
-const supabase = (!isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_KEY))
+const supabase = (process.env.MEOW_ENABLE_CLOUD === '1' && !isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_KEY))
     ? createClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: {
             storage: customStorage,
@@ -56,11 +61,12 @@ const supabase = (!isPlaceholder(SUPABASE_URL) && !isPlaceholder(SUPABASE_KEY))
     }) 
     : null;
 
-// 仍然保留本地文件路径作为备份或缓存（可选），但主要逻辑将切换到 Supabase
-const RECORDS_FILE = app.isPackaged?path.join(process.resourcesPath, 'records.json'):path.join(__dirname, '../../../data/records.json')
-if (!fs.existsSync(RECORDS_FILE)) {
-    fs.writeFileSync(RECORDS_FILE, JSON.stringify([]), 'utf-8')
-}
+// 保留本地模式的数据和首次迁移；默认云端模式由文件末尾的 API 适配器接管。
+const localFiles = initializeLocalStore(
+    app.getPath('userData'),
+    app.isPackaged ? process.resourcesPath : path.join(__dirname, '../../../data')
+)
+const RECORDS_FILE = localFiles.records
 
 let mainWindow
 function createWindow(){
@@ -445,7 +451,7 @@ ipcMain.handle('add_record', async (event, record) => {
         if (fs.existsSync(RECORDS_FILE)) {
             records = JSON.parse(fs.readFileSync(RECORDS_FILE, 'utf-8'))
         }
-        records.push(record)
+        records.push(localizeRecordImages({ ...record, id: randomUUID() }))
         fs.writeFileSync(RECORDS_FILE, JSON.stringify(records, null, 2), 'utf-8')
         return true
     }
@@ -453,11 +459,11 @@ ipcMain.handle('add_record', async (event, record) => {
 
 let addRecordWin
 ipcMain.handle('open_add_record_window', async (event) => {
-    if (addRecordWin) return
+    if (addRecordWin) { addRecordWin.focus(); return }
     const parentWindow = BrowserWindow.fromWebContents(event.sender) || mainWindow
     addRecordWin = createChildWindow({
-        width: 400,
-        height: 480,
+        width: 480,
+        height: 760,
         parent: parentWindow,
         modal: true,
         file: path.join(__dirname, '../html/add_record.html')
@@ -488,15 +494,16 @@ ipcMain.handle('delete_record', async (event, { index, id }) => {
     }
 })
 
-const MAP_RECORDS_FILE = app.isPackaged ? path.join(process.resourcesPath, 'map_records.json') : path.join(__dirname, '../../../data/map_records.json')
-if (!fs.existsSync(MAP_RECORDS_FILE)) {
-    fs.writeFileSync(MAP_RECORDS_FILE, JSON.stringify([]), 'utf-8')
-}
+const MAP_RECORDS_FILE = localFiles.map_records
 
 let mapWin
-ipcMain.handle('open_map_window', async () => {
+ipcMain.handle('open_map_window', async (_event, target) => {
+    const locate = () => {
+        if (Number.isFinite(target?.lat) && Number.isFinite(target?.lng)) mapWin.webContents.send('locate-map-record', target)
+    }
     if (mapWin) {
         mapWin.focus()
+        locate()
         return
     }
     // webSecurity: false 允许地图记录加载本地磁盘上的图片
@@ -506,6 +513,7 @@ ipcMain.handle('open_map_window', async () => {
         parent: null,
         file: path.join(__dirname, '../html/map.html')
     })
+    mapWin.webContents.once('did-finish-load', locate)
     mapWin.on('close', () => mapWin = null)
 })
 
@@ -705,7 +713,7 @@ ipcMain.handle('delete_comment', async (event, commentId) => {
 });
 
 ipcMain.handle('get_current_user_profile', async () => {
-    if (!supabase) return null;
+    if (!supabase) return localProfile(LOCAL_PROFILE_FILE);
     const { data: { user } } = await getUserWithRetry();
     if (!user) return null;
     
@@ -719,11 +727,18 @@ ipcMain.handle('get_current_user_profile', async () => {
     return { ...user, profile };
 });
 
-ipcMain.handle('update_profile', async (event, { username, avatarPath }) => {
-    if (!supabase) return false;
+ipcMain.handle('update_profile', async (event, input) => {
+    if (!supabase) {
+        try { return { success: true, user: localProfile(LOCAL_PROFILE_FILE, input) } }
+        catch (error) { return { success: false, error: error.message } }
+    }
+    const { avatarPath } = input;
     const { data: { user } } = await getUserWithRetry();
     if (!user) return false;
 
+    let username;
+    try { username = profileUpdate(input, user.id).username }
+    catch (error) { return { success: false, error: error.message } }
     let avatarUrl = null;
     if (avatarPath && fs.existsSync(avatarPath)) {
         try {
@@ -999,14 +1014,12 @@ ipcMain.handle('get-current-user', async () => {
 })
 
 ipcMain.handle('is-cloud-enabled', async () => Boolean(supabase))
+ipcMain.handle('is-social-enabled', async () => Boolean(supabase))
 
 // ==========================================
 // 猫咪档案：把多次目击归到同一只猫下
 // ==========================================
-const CATS_FILE = app.isPackaged ? path.join(process.resourcesPath, 'cats.json') : path.join(__dirname, '../../../data/cats.json')
-if (!fs.existsSync(CATS_FILE)) {
-    fs.writeFileSync(CATS_FILE, JSON.stringify([]), 'utf-8')
-}
+const CATS_FILE = localFiles.cats
 
 function readLocalCats() {
     if (!fs.existsSync(CATS_FILE)) return []
@@ -1035,6 +1048,8 @@ ipcMain.handle('get_cats', async () => {
 })
 
 ipcMain.handle('add_cat', async (event, cat) => {
+    cat = normalizeCat(cat)
+    if (cat.avatar && !cat.avatar.startsWith('builtin:')) cat.avatar = localizeRecordImages({ images: [cat.avatar] }).images[0]
     if (supabase) {
         const { data: { user } } = await getUserWithRetry()
         if (!user) throw new Error('User not logged in')
@@ -1050,7 +1065,7 @@ ipcMain.handle('add_cat', async (event, cat) => {
         return data?.[0] || true
     } else {
         const cats = readLocalCats()
-        const newCat = { ...cat, id: Date.now(), created_at: new Date().toISOString() }
+        const newCat = { ...cat, id: randomUUID(), created_at: new Date().toISOString() }
         cats.push(newCat)
         fs.writeFileSync(CATS_FILE, JSON.stringify(cats, null, 2), 'utf-8')
         return newCat
@@ -1058,6 +1073,8 @@ ipcMain.handle('add_cat', async (event, cat) => {
 })
 
 ipcMain.handle('update_cat', async (event, { id, cat }) => {
+    cat = normalizeCat(cat)
+    if (cat.avatar && !cat.avatar.startsWith('builtin:')) cat.avatar = localizeRecordImages({ images: [cat.avatar] }).images[0]
     if (supabase) {
         const { error } = await supabaseWithRetry(() => supabase
             .from('cats')
@@ -1221,6 +1238,35 @@ ipcMain.handle('import_data', async () => {
     fs.writeFileSync(MAP_RECORDS_FILE, JSON.stringify(localMap, null, 2), 'utf-8')
     fs.writeFileSync(CATS_FILE, JSON.stringify(localCats, null, 2), 'utf-8')
     return { ok: true, message: `已合并导入 ${addedRecords} 条观察记录、${addedMap} 条地图记录、${addedCats} 个档案（重复数据已跳过）` }
+})
+
+// Personal observations must not include other people's public map records.
+ipcMain.handle('get_own_map_records', async () => {
+    if (!supabase) return fs.existsSync(MAP_RECORDS_FILE) ? JSON.parse(fs.readFileSync(MAP_RECORDS_FILE, 'utf8')) : []
+    const { data: { user } } = await getUserWithRetry()
+    if (!user) return []
+    const { data, error } = await supabaseWithRetry(() => supabase.from('map_records').select('*').eq('user_id', user.id))
+    if (error) throw error
+    return data || []
+})
+
+ipcMain.handle('seed_campus_demo', async () => {
+    if (supabase) throw new Error('此示例入口仅支持默认云端或本地模式')
+    const demo = require('../../backend/campus_demo').campusDemoData()
+    const cats = readLocalCats()
+    const records = fs.existsSync(MAP_RECORDS_FILE) ? JSON.parse(fs.readFileSync(MAP_RECORDS_FILE, 'utf8')) : []
+    const catIds = new Set(cats.map(row => row.id)), recordIds = new Set(records.map(row => row.id))
+    cats.push(...demo.cats.filter(row => !catIds.has(row.id)))
+    const missing = demo.records.filter(row => !recordIds.has(row.id))
+    records.push(...missing)
+    fs.writeFileSync(CATS_FILE, JSON.stringify(cats, null, 2))
+    fs.writeFileSync(MAP_RECORDS_FILE, JSON.stringify(records, null, 2))
+    return { added: missing.length, total: demo.records.length, campuses: demo.campuses.length }
+})
+
+// The standalone API is the default; MEOW_LOCAL_MODE=1 explicitly enables local JSON.
+require('../../backend/meow_api_client').installMeowApi({
+    ipcMain, app, dialog, safeStorage: require('electron').safeStorage, compressImageForUpload
 })
 
 // 当所有窗口都关闭时

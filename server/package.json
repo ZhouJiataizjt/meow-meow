@@ -1,0 +1,12 @@
+{
+  "name": "meow-map-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Memory-bounded API for the Meow Map desktop client",
+  "scripts": {
+    "start": "node --max-old-space-size=64 index.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.15.3"
+  }
+}

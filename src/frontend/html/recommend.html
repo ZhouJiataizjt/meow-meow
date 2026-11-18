@@ -3,16 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <title>今日寻猫</title>
+    <link rel="icon" href="../assets/favicon.ico">
     <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
+    <link rel="stylesheet" href="../css/light.css">
 </head>
-<body>
+<body class="discovery-page">
     <div class="container">
         
+        <div class="workspace-intro"><h2>今天，去哪里遇见猫</h2><p>告诉我们你所在的地区，找一个适合观察的地方。</p></div>
         <div class="form-group">
+            <label for="area_input">你所在的地区</label>
             <input id="area_input" type="text" placeholder="请输入你所在的地区（如：杭州西湖）">
         </div>
         <div class="text-center">
-            <button onclick="recommender()">✨ 获取推荐</button>
+            <button onclick="recommender()"><img class="ui-icon " src="../assets/星光.svg" alt="" aria-hidden="true"> 获取推荐</button>
         </div>
         
         <div id="result" class="mt-20" style="white-space: pre-wrap; line-height: 1.6; background: #f9f9f9; padding: 15px; border-radius: 5px; min-height: 100px;"></div>

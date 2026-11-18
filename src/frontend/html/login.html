@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>用户登录/注册</title>
+    <link rel="icon" href="../assets/favicon.ico">
     <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
     <style>
         .auth-container {
             max-width: 400px;
@@ -53,6 +55,7 @@
             outline: none;
         }
     </style>
+    <link rel="stylesheet" href="../css/light.css">
 </head>
 <body>
     <div class="auth-container">
@@ -80,7 +83,7 @@
             </div>
             <div class="form-group">
                 <label>密码</label>
-                <input type="password" id="reg-password" placeholder="设置密码 (至少6位)">
+                <input type="password" id="reg-password" placeholder="设置密码 (至少8位)">
             </div>
             <button class="w-100" onclick="handleRegister()">注册</button>
         </div>

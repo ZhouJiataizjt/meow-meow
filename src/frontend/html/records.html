@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <title>我的猫咪记录</title>
+    <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
   <style>
     table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
@@ -29,15 +31,25 @@
         font-size: 12px;
     }
   </style>
+    <link rel="stylesheet" href="../css/workspace.css">
+    <link rel="stylesheet" href="../css/light.css">
 </head>
-<body>
+<body class="records-page">
     <div class="container" style="max-width: 100%;">
         
+        <div class="workspace-intro"><h2>相遇手记</h2><p>按时间整理偶遇，留住每只猫咪的日常。</p></div>
         <div class="toolbar">
-            <input id="search" class="search-box" placeholder="🔍 搜索猫咪记录...">
-            <button onclick="add_records()">➕ 添加记录</button>
+            <label class="filter-field">搜索范围<select id="search-field" aria-label="搜索字段">
+                <option value="all">全部字段</option><option value="time">发现时间</option><option value="location">地点 / 标题</option><option value="species">猫咪 / 品种</option><option value="gender">毛色 / 特征</option><option value="area">校园</option><option value="cat_name">猫咪昵称</option><option value="cat_id">猫咪 ID</option><option value="count">数量</option><option value="desc">观察描述</option><option value="id">记录 ID</option>
+            </select></label>
+            <label class="filter-field search-entry">关键词<input id="search" class="search-box" type="search" aria-label="搜索观察记录" placeholder="搜索全部字段，空格分隔多个关键词"></label>
+            <label class="filter-field">记录来源<select id="record-source" aria-label="记录来源"><option value="all">全部记录</option><option value="record">观察记录</option><option value="map">地图打卡</option></select></label>
+            <span class="records-summary" id="records-summary" aria-live="polite"></span>
+            <button onclick="add_records()">添加记录</button>
         </div>
 
+        <p id="records-status" role="status" hidden></p>
+        <div class="records-table-scroll" role="region" aria-label="观察记录表" tabindex="0">
         <table>
           <thead>
           <tr>
@@ -52,35 +64,51 @@
           </thead>
           <tbody id="records_body"></tbody>
         </table>
+        </div>
+        <p id="records-empty" role="status" hidden>还没有符合条件的记录。试试其他关键词，或添加一条观察记录。</p>
     </div>
 
 <script>
   const { ipcRenderer } = require('electron')
+  if (window.parent !== window) document.body.classList.add('embedded-page')
+  const { combineObservations, filterObservations } = require('../../backend/observation_search')
   const { escapeHtml } = require('../../backend/utils')
   const { loadAreasData, campusOptions } = require('../../backend/areas')
   const areasData = loadAreasData()
   let records = []
   let cats = []
 
+  let loadingRecords = false
   async function loadRecords() {
-    records = await ipcRenderer.invoke('get_records')
+    if (loadingRecords) return
+    loadingRecords = true
+    const message = document.getElementById('records-status')
     try {
-      cats = await ipcRenderer.invoke('get_cats') || []
-    } catch (e) {
-      cats = []
-    }
-    displayRecords(records)
+      const [ordinary, mapped, allCats] = await Promise.all([
+        ipcRenderer.invoke('get_records'), ipcRenderer.invoke('get_own_map_records'), ipcRenderer.invoke('get_cats')
+      ])
+      cats = allCats || []
+      records = combineObservations(ordinary || [], mapped || [], cats)
+      message.hidden = true
+      applyFilters()
+    } catch (error) {
+      message.textContent = '记录读取失败：' + error.message + '。请检查登录状态后重新打开页面。'
+      message.hidden = false
+      document.getElementById('records-empty').hidden = true
+    } finally { loadingRecords = false }
   }
 
   function catNameOf(record) {
     if (record.cat_id === undefined || record.cat_id === null || record.cat_id === '') return ''
     const cat = cats.find(c => String(c.id) === String(record.cat_id))
-    return cat ? cat.name : ''
+    return cat ? `${cat.name} · ID: ${cat.id}` : (record.cat_name || '')
   }
 
   function displayRecords(data) {
+    document.getElementById('records-summary').textContent = `共 ${records.length} 条 · 当前 ${data.length} 条`
     const tbody = document.getElementById('records_body')
     tbody.innerHTML = ''
+    document.getElementById('records-empty').hidden = data.length > 0
     data.forEach((r, idx) => {
       // data-index 必须是记录在完整 records 数组中的下标：
       // 搜索/排序后显示的是子集，用子集下标会编辑/删除到错误的记录
@@ -89,18 +117,25 @@
       const tr = document.createElement('tr')
       const idAttr = r.id ? `data-id="${escapeHtml(r.id)}"` : '';
       tr.innerHTML = `
-            <td>${escapeHtml(r.time)}${r.area ? `<div style="font-size:11px;color:#8f7166;margin-top:2px;">🏫 ${escapeHtml(r.area)}</div>` : ''}</td>
-            <td>${escapeHtml(r.location)}</td>
-            <td>${escapeHtml(r.count)}</td>
+            <td>${escapeHtml(String(r.time || '').replace('T', ' ').slice(0, 16))}${r.area ? `<div style="font-size:11px;color:var(--muted-color);margin-top:2px;"><img class="ui-icon" src="../assets/学校-L.svg" alt="" aria-hidden="true"> ${escapeHtml(r.area)}</div>` : ''}</td>
+            <td>${escapeHtml(r.location)}<small class="record-source-label">${escapeHtml(r.source_label)}</small></td>
+            <td>${escapeHtml(r.count ?? "—")}</td>
             <td>${escapeHtml(r.species)}</td>
             <td>${escapeHtml(r.gender)}</td>
-            <td>${catName ? `🐱 ${escapeHtml(catName)}` : '<span style="color:#bbb;">未关联</span>'}</td>
+            <td>${catName ? `<img class="ui-icon " src="../assets/猫咪.svg" alt="" aria-hidden="true"> ${escapeHtml(catName)}` : '<span style="color:#bbb;">未关联</span>'}</td>
             <td>
+                ${Number.isFinite(r.lat) && Number.isFinite(r.lng) ? `<button class="locateBtn" data-row="${originalIndex}">定位到地图</button>` : '<span class="no-location">无坐标</span>'}
                 <button class="editBtn" data-index="${originalIndex}" ${idAttr}>编辑</button>
                 <button class="delBtn" data-index="${originalIndex}" ${idAttr}>删除</button>
             </td>
         `
       tbody.appendChild(tr)
+    })
+
+    document.querySelectorAll('.locateBtn').forEach(button => button.onclick = () => {
+      const record = records[Number(button.dataset.row)]
+      if (window.parent !== window) window.parent.postMessage({ type: 'locate-record', record: { id: record.id, lat: record.lat, lng: record.lng } }, '*')
+      else ipcRenderer.invoke('open_map_window', { id: record.id, lat: record.lat, lng: record.lng })
     })
 
     // 给删除按钮绑定事件
@@ -110,7 +145,8 @@
         const id = btn.dataset.id
         if(confirm('确定要删除这条记录吗？')) {
             try {
-                await ipcRenderer.invoke('delete_record', { index, id })
+                const row = records[index]
+                await ipcRenderer.invoke(row._source === 'map' ? 'delete_map_record' : 'delete_record', { index: row._sourceIndex, id })
                 loadRecords()  // 刷新表格
             } catch (e) {
                 alert('删除失败: ' + e.message)
@@ -125,26 +161,26 @@
         const index = parseInt(btn.dataset.index)
         const id = btn.dataset.id
         let record = records[index]
-        if (id) {
-            record = records.find(r => r.id == id) || record
-        }
         showEditModal(record, index, id)
       })
     })
   }
 
-  // 搜索功能（覆盖时间、地点、品种、校园区域）
   const searchInput = document.getElementById('search')
-  searchInput.addEventListener('input', () => {
-    const query = searchInput.value.toLowerCase()
-    const filtered = records.filter(r =>
-            String(r.time || '').toLowerCase().includes(query) ||
-            String(r.location || '').toLowerCase().includes(query) ||
-            String(r.species || '').toLowerCase().includes(query) ||
-            String(r.area || '').toLowerCase().includes(query)
-    )
-    displayRecords(filtered)
+  const searchField = document.getElementById('search-field')
+  const recordSource = document.getElementById('record-source')
+  let sortField = ''
+  let sortDirection = 1
+  function applyFilters() {
+    displayRecords(filterObservations(records, { query: searchInput.value, field: searchField.value,
+      source: recordSource.value, sort: sortField, direction: sortDirection }))
+  }
+  searchInput.addEventListener('input', applyFilters)
+  searchField.addEventListener('change', () => {
+    searchInput.placeholder = searchField.value === 'all' ? '搜索全部字段，空格分隔多个关键词' : '输入' + searchField.selectedOptions[0].textContent + '关键词'
+    applyFilters()
   })
+  recordSource.addEventListener('change', applyFilters)
 
   // Edit Modal Logic
   let currentEditIndex = null
@@ -162,7 +198,8 @@
           modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;justify-content:center;align-items:center;z-index:1000;'
           modal.innerHTML = `
             <div style="background:white;padding:20px;border-radius:8px;width:300px;">
-                <h3>编辑记录</h3>
+                <h3 id="edit-heading">编辑记录</h3>
+                <label id="edit-description-label" hidden>观察描述：<textarea id="edit-description"></textarea></label>
                 <label>时间: <input id="edit-time" type="datetime-local" style="width:100%;margin-bottom:10px;"></label>
                 <label>地点: <input id="edit-location" style="width:100%;margin-bottom:10px;"></label>
                 <label>数量: <input id="edit-count" type="number" style="width:100%;margin-bottom:10px;"></label>
@@ -180,7 +217,7 @@
                  </label>
                 <div style="text-align:right;">
                     <button onclick="closeEditModal()">取消</button>
-                    <button onclick="saveEdit()" style="background:#df7d5c;color:white;">保存</button>
+                    <button onclick="saveEdit()" style="background:#d5eeeb;color:#286469;">保存</button>
                 </div>
             </div>
           `
@@ -188,6 +225,10 @@
       }
       
       // Format time for datetime-local input (YYYY-MM-DDTHH:mm)
+      const isMap = record._source === 'map'
+      document.getElementById('edit-heading').textContent = isMap ? '编辑地图打卡' : '编辑观察记录'
+      document.getElementById('edit-description-label').hidden = !isMap
+      document.getElementById('edit-description').value = record.desc || ''
       let timeVal = record.time;
       if (timeVal && timeVal.includes('T') && timeVal.length > 16) {
           timeVal = timeVal.substring(0, 16);
@@ -226,18 +267,20 @@
           count: document.getElementById('edit-count').value, // Keep as string to match add_record
           species: document.getElementById('edit-species').value,
           gender: document.getElementById('edit-gender').value,
-          cat_id: document.getElementById('edit-cat').value || null
+          cat_id: document.getElementById('edit-cat').value || null,
+          area: document.getElementById('edit-area').value
       }
       
       // Remove empty fields to avoid overwriting with null/empty if that's not intended
       // But here fields are required usually.
       
       try {
-          console.log('Updating record:', { id: currentEditId, index: currentEditIndex, record: newRecord });
-          const success = await ipcRenderer.invoke('update_record', { 
+          const row = records[currentEditIndex]
+          const payload = row._source === 'map' ? { ...row._raw, ...newRecord, title: newRecord.location, created_at: newRecord.time, desc: document.getElementById('edit-description').value } : newRecord
+          const success = await ipcRenderer.invoke(row._source === 'map' ? 'update_map_record' : 'update_record', {
               id: currentEditId, 
-              index: currentEditIndex, 
-              record: newRecord 
+              index: row._sourceIndex,
+              record: payload
           })
           
           if (!success) {
@@ -257,12 +300,12 @@
     th.addEventListener('click', () => {
       const field = th.dataset.field
       if(!field) return;
-      const sorted = [...records].sort((a, b) => {
-        if(a[field] < b[field]) return -1
-        if(a[field] > b[field]) return 1
-        return 0
+      sortDirection = sortField === field ? -sortDirection : 1
+      sortField = field
+      document.querySelectorAll('th[data-field]').forEach(header => {
+        header.setAttribute('aria-sort', header === th ? (sortDirection === 1 ? 'ascending' : 'descending') : 'none')
       })
-      displayRecords(sorted)
+      applyFilters()
     })
   })
 

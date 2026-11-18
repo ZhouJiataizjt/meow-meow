@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>猫咪档案</title>
+    <link rel="icon" href="../assets/favicon.ico">
     <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
     <style>
         .cats-header {
             display: flex;
@@ -104,16 +106,19 @@
         .cat-info-row { font-size: 13px; margin: 6px 0; color: #4a3b33; }
         .cat-info-row b { color: var(--primary-color); }
     </style>
+    <link rel="stylesheet" href="../css/workspace.css">
+    <link rel="stylesheet" href="../css/light.css">
 </head>
-<body>
+<body class="cats-page">
     <div class="container" style="max-width: 100%;">
         <div class="cats-header">
-            <h2>🐈 猫咪档案</h2>
+            <div><h2>常驻猫咪</h2><p>熟悉的身影，每一只都有自己的故事。</p></div>
             <button onclick="openCatForm()">＋ 新建档案</button>
         </div>
+        <div class="cat-search"><label for="cat-search">搜索猫咪档案</label><input id="cat-search" type="search" placeholder="搜索昵称、ID、品种、特征或备注"><span id="cat-search-count" aria-live="polite"></span></div>
         <div id="cat-grid" class="cat-grid"></div>
         <div id="empty-tip" class="empty-tip" style="display:none;">
-            还没有猫咪档案。给常驻的那只猫建一个档案吧，之后的每次相遇都会记录在这里。
+            <img class="empty-art" src="../assets/猫咪2.svg" alt="">还没有猫咪档案。给常驻的那只猫建一个档案吧，之后的每次相遇都会记录在这里。
         </div>
     </div>
 
@@ -122,7 +127,8 @@
         <div class="modal-box">
             <h3 id="cat-form-title">新建猫咪档案</h3>
             <input type="hidden" id="cat-form-id">
-            <label>名字：<input type="text" id="cat-form-name" placeholder="例如：大橘"></label>
+            <div class="avatar-editor"><img id="cat-avatar-preview" src="../assets/猫咪.svg" alt="头像预览"><div><button type="button" class="secondary" onclick="selectCatAvatar()">上传头像</button><button type="button" class="secondary" onclick="setCatAvatar('builtin:cat')">猫咪头像</button><button type="button" class="secondary" onclick="setCatAvatar('builtin:cat2')">线条猫咪</button><button type="button" class="secondary" onclick="setCatAvatar('')">恢复首字</button><p id="cat-avatar-status" role="status"></p></div></div>
+            <label>昵称：<input type="text" id="cat-form-name" placeholder="例如：大橘"></label>
             <label>品种/花色：<input type="text" id="cat-form-species" placeholder="例如：橘猫"></label>
             <label>外貌特征：<input type="text" id="cat-form-features" placeholder="例如：右耳缺角、脖子上有点白毛"></label>
             <label>备注：<textarea id="cat-form-notes" rows="3" placeholder="性格、喜好的食物、常出没位置……"></textarea></label>
@@ -150,13 +156,30 @@
 
 <script>
     const { ipcRenderer } = require('electron')
-    const { escapeHtml, parseRecordTime } = require('../../backend/utils')
+    const { escapeHtml, safeResourceUrl, parseRecordTime } = require('../../backend/utils')
 
-    const AVATAR_COLORS = ['#ffe3d6', '#fff0c9', '#dff0e2', '#e3ecfb', '#f7e2f0', '#e8e4f9']
+    const AVATAR_COLORS = ['#e4f2ef', '#e8f0f8', '#f7eee6', '#eceef7', '#e9f3f5']
     let cats = []
     let records = []
     let mapRecords = []
     let currentCatId = null
+    let currentAvatar = ''
+    function avatarUrl(value) {
+        if (value === 'builtin:cat') return '../assets/猫咪.svg'
+        if (value === 'builtin:cat2') return '../assets/猫咪2.svg'
+        return String(value || '').trim()
+    }
+    function setCatAvatar(value) {
+        currentAvatar = value
+        const url = avatarUrl(value)
+        document.getElementById('cat-avatar-preview').src = safeResourceUrl(url) ? url : '../assets/猫咪2.svg'
+        document.getElementById('cat-avatar-status').textContent = value ? '保存档案后生效' : '将恢复昵称首字头像'
+    }
+    async function selectCatAvatar() {
+        try { const selected = await ipcRenderer.invoke('select-image'); if (selected) setCatAvatar(selected) }
+        catch (error) { document.getElementById('cat-avatar-status').textContent = '选择头像失败：' + error.message }
+    }
+    document.getElementById('cat-search').addEventListener('input', renderGrid)
 
     function avatarColorOf(cat) {
         const name = String(cat.name || '')
@@ -166,10 +189,17 @@
     }
 
     async function loadAll() {
-        cats = (await ipcRenderer.invoke('get_cats')) || []
-        records = (await ipcRenderer.invoke('get_records')) || []
-        mapRecords = (await ipcRenderer.invoke('get_map_records')) || []
-        renderGrid()
+        try {
+            const [nextCats, nextRecords, nextMapRecords] = await Promise.all([
+                ipcRenderer.invoke('get_cats'), ipcRenderer.invoke('get_records'), ipcRenderer.invoke('get_own_map_records')
+            ])
+            cats = nextCats || []
+            records = nextRecords || []
+            mapRecords = nextMapRecords || []
+            renderGrid()
+        } catch {
+            document.getElementById('cat-search-count').textContent = '读取档案失败，请稍后重试。'
+        }
     }
 
     function sightingsOf(catId) {
@@ -189,7 +219,7 @@
                 time: parseRecordTime(r),
                 title: r.title || '地图打卡',
                 note: r.desc || '',
-                badge: '地图打卡'
+                badge: '地图打卡', record: r
             })
         }
         return items.sort((a, b) => b.time - a.time)
@@ -199,19 +229,28 @@
         const grid = document.getElementById('cat-grid')
         const tip = document.getElementById('empty-tip')
         grid.innerHTML = ''
-        tip.style.display = cats.length === 0 ? 'block' : 'none'
+        const query = document.getElementById('cat-search').value.trim().toLocaleLowerCase()
+        const filtered = cats.filter(cat => [cat.name,cat.id,cat.species,cat.features,cat.notes].some(v => String(v || '').toLocaleLowerCase().includes(query)))
+        document.getElementById('cat-search-count').textContent = `共 ${cats.length} 只 · 当前 ${filtered.length} 只`
+        tip.style.display = filtered.length === 0 ? 'block' : 'none'
+        tip.innerHTML = `<img class="empty-art" src="../assets/猫咪2.svg" alt="">${cats.length ? '没有符合条件的猫咪，试试其他关键词。' : '还没有猫咪档案，先给熟悉的猫咪建一个档案吧。'}`
 
-        cats.forEach(cat => {
+        filtered.forEach(cat => {
             const sightings = sightingsOf(cat.id)
             const lastTime = sightings.length > 0 && sightings[0].time > 0
                 ? new Date(sightings[0].time).toLocaleDateString()
                 : null
             const card = document.createElement('div')
             card.className = 'cat-card'
+            card.tabIndex = 0
+            card.setAttribute('role', 'button')
+            card.setAttribute('aria-label', `查看${cat.name}的档案`)
+            card.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showCatDetail(cat.id) } }
             card.onclick = () => showCatDetail(cat.id)
             card.innerHTML = `
-                <div class="cat-card-avatar" style="background:${avatarColorOf(cat)};">🐈</div>
+                <div class="cat-card-avatar" style="background:${avatarColorOf(cat)};">${cat.avatar ? `<img src="${safeResourceUrl(avatarUrl(cat.avatar))}" alt="${escapeHtml(cat.name)}的头像">` : escapeHtml(String(cat.name || "猫").slice(0, 1))}</div>
                 <div class="cat-card-name">${escapeHtml(cat.name)}</div>
+                <div class="cat-card-id">ID：${escapeHtml(cat.id)}</div>
                 <div class="cat-card-species">${escapeHtml(cat.species || '未知品种')}</div>
                 <div class="cat-card-meta">
                     <span>相遇 ${sightings.length} 次</span>
@@ -230,6 +269,8 @@
         document.getElementById('detail-name').textContent = cat.name
         const sightings = sightingsOf(cat.id)
         const infoHtml = `
+            ${cat.avatar ? `<img class="detail-cat-avatar" src="${safeResourceUrl(avatarUrl(cat.avatar))}" alt="${escapeHtml(cat.name)}的头像">` : ""}
+            <div class="cat-info-row" style="overflow-wrap:anywhere;"><b>固定 ID：</b>${escapeHtml(cat.id)}</div>
             <div class="cat-info-row"><b>品种/花色：</b>${escapeHtml(cat.species || '未知')}</div>
             <div class="cat-info-row"><b>外貌特征：</b>${escapeHtml(cat.features || '暂无记录')}</div>
             <div class="cat-info-row"><b>备注：</b>${escapeHtml(cat.notes || '暂无')}</div>
@@ -240,7 +281,7 @@
         if (sightings.length === 0) {
             timeline.innerHTML = '<div class="empty-tip" style="padding:16px 0;">还没有关联的相遇记录。在“添加记录”或地图打卡时选择关联这个档案即可。</div>'
         } else {
-            timeline.innerHTML = sightings.map(s => {
+            timeline.innerHTML = sightings.map((s, i) => {
                 const dateStr = s.time > 0 ? new Date(s.time).toLocaleString() : '时间未知'
                 return `
                     <div class="timeline-item">
@@ -248,11 +289,18 @@
                         <div class="timeline-body">
                             <div class="timeline-title">${escapeHtml(s.title)}<span class="timeline-badge">${s.badge}</span></div>
                             ${s.note ? `<div class="timeline-note">${escapeHtml(s.note)}</div>` : ''}
+                            ${Number.isFinite(s.record?.lat) && Number.isFinite(s.record?.lng) ? `<button class="timeline-locate secondary" data-sighting="${i}">定位到地图</button>` : ""}
                         </div>
                     </div>
                 `
             }).join('')
         }
+        timeline.querySelectorAll('[data-sighting]').forEach(button => button.onclick = () => {
+            const record = sightings[Number(button.dataset.sighting)].record
+            const target = { id: record.id, lat: record.lat, lng: record.lng }
+            if (window.parent !== window) window.parent.postMessage({ type: 'locate-record', record: target }, '*')
+            else ipcRenderer.invoke('open_map_window', target).catch(() => alert('打开地图失败，请稍后重试。'))
+        })
         document.getElementById('cat-detail-mask').style.display = 'flex'
     }
 
@@ -262,6 +310,7 @@
     }
 
     function openCatForm(cat) {
+        setCatAvatar(cat?.avatar || '')
         document.getElementById('cat-form-title').textContent = cat ? '编辑猫咪档案' : '新建猫咪档案'
         document.getElementById('cat-form-id').value = cat ? cat.id : ''
         document.getElementById('cat-form-name').value = cat ? (cat.name || '') : ''
@@ -290,6 +339,7 @@
         }
         const cat = {
             name,
+            avatar: currentAvatar,
             species: document.getElementById('cat-form-species').value.trim(),
             features: document.getElementById('cat-form-features').value.trim(),
             notes: document.getElementById('cat-form-notes').value.trim()
@@ -297,7 +347,8 @@
         const id = document.getElementById('cat-form-id').value
         try {
             if (id) {
-                await ipcRenderer.invoke('update_cat', { id, cat })
+                const saved = await ipcRenderer.invoke('update_cat', { id, cat })
+                if (saved === false) throw new Error('找不到这份猫咪档案')
             } else {
                 await ipcRenderer.invoke('add_cat', cat)
             }

@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <title>喵喵地图</title>
+    <link rel="icon" href="../assets/favicon.ico">
     <link rel="stylesheet" href="../vendor/leaflet.css" />
     <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
     <style>
         /* Override common.css for full screen map */
         body {
@@ -17,6 +19,21 @@
         }
         
         #map { height: 100%; width: 100%; background-color: #f0f0f0; z-index: 1; }
+
+        /* 选点时让点击穿过校园多边形和猫咪标记，统一交给地图处理。 */
+        #map.location-picking,
+        #map.location-picking .leaflet-pane,
+        #map.location-picking .leaflet-pane * {
+            cursor: crosshair !important;
+        }
+        #map.location-picking .leaflet-interactive {
+            pointer-events: none !important;
+        }
+        #map.location-picking .leaflet-popup-pane,
+        #map.location-picking .leaflet-tooltip-pane {
+            visibility: hidden;
+            pointer-events: none;
+        }
 
         .cat-marker {
             background: transparent;
@@ -67,7 +84,7 @@
             bottom: 30px;
             right: 30px;
             z-index: 1000;
-             background: #df7d5c;
+             background: #367f83;
             color: white;
             border: none;
             border-radius: 50%;
@@ -117,7 +134,7 @@
             font-size: 13px;
         }
         #heat-btn.active {
-            background: #df7d5c;
+            background: #367f83;
             color: white;
         }
 
@@ -138,7 +155,7 @@
             font-size: 13px;
         }
         #areas-btn.active {
-            background: #8f7166;
+            background: #7ea1b3;
             color: white;
         }
 
@@ -148,7 +165,7 @@
         .campus-summary button {
             width: 100%;
             margin-top: 8px;
-            background: #df7d5c;
+            background: #367f83;
             color: white;
             font-size: 12px;
             min-height: 30px;
@@ -165,7 +182,7 @@
             cursor: pointer;
             margin-bottom: 4px;
         }
-        .cluster-back:hover { background: #ffe3d6; }
+        .cluster-back:hover { background: #d5eeeb; }
 
         /* 校园边界永久标签 */
         .campus-label {
@@ -191,7 +208,7 @@
         }
         .popup-area {
             font-size: 11px;
-            color: #8f7166;
+            color: #7ea1b3;
             margin-top: 4px;
         }
 
@@ -267,7 +284,7 @@
         }
         .list-search-bar input:focus {
             background: white;
-            border-color: #df7d5c;
+            border-color: #367f83;
             box-shadow: 0 0 0 3px rgba(223, 125, 92, 0.12);
             outline: none;
         }
@@ -317,13 +334,13 @@
         }
         .filter-toggle input {
             margin-right: 6px;
-            accent-color: #df7d5c;
+            accent-color: #367f83;
             width: 14px;
             height: 14px;
         }
         .filter-toggle.active {
             background: #e7f5ff;
-            border-color: #df7d5c;
+            border-color: #367f83;
             color: #1971c2;
         }
 
@@ -385,7 +402,7 @@
             transform: translateY(-2px);
             box-shadow: 0 8px 15px rgba(0,0,0,0.1);
         }
-        .record-card img {
+        .record-card img:not(.ui-icon) {
             width: 80px;
             height: 80px;
             object-fit: cover;
@@ -445,6 +462,8 @@
             justify-content: center;
         }
         .modal-content {
+            max-height: 88vh;
+            overflow-y: auto;
             background: white;
             padding: 20px;
             border-radius: 8px;
@@ -457,7 +476,7 @@
         .btn-group { text-align: right; margin-top: 20px; }
         button { padding: 8px 15px; cursor: pointer; border-radius: 4px; border: none; }
         .btn-cancel { background: #e0e0e0; margin-right: 10px; }
-        .btn-save { background: #df7d5c; color: white; }
+        .btn-save { background: #367f83; color: white; }
 
         /* Detail Modal */
         #detail-modal {
@@ -520,7 +539,7 @@
         
         .gallery-container { display: flex; gap: 5px; overflow-x: auto; padding: 10px 0; }
         .gallery-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 2px solid transparent; }
-        .gallery-thumb:hover { border-color: #df7d5c; }
+        .gallery-thumb:hover { border-color: #367f83; }
         
         .comments-section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; max-height: 150px; overflow-y: auto; }
         .comment-item { margin-bottom: 10px; font-size: 13px; border-bottom: 1px solid #f9f9f9; padding-bottom: 5px; }
@@ -535,13 +554,17 @@
         #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 3000; justify-content: center; align-items: center; }
         #lightbox img { max-width: 90%; max-height: 90%; object-fit: contain; }
     </style>
+    <link rel="stylesheet" href="../css/workspace.css">
+    <link rel="stylesheet" href="../css/light.css">
 </head>
-<body>
+<body class="map-page">
 
-<button id="list-btn" onclick="showRecordsList()">📋 猫咪记录</button>
-<button id="heat-btn" onclick="toggleHeatmap()" title="切换热力图">🔥 热力图</button>
-<button id="areas-btn" class="active" onclick="toggleCampusAreas()" title="显示/隐藏高校范围">🏫 校园范围</button>
+<div class="map-tools" role="group" aria-label="地图工具">
+<button id="list-btn" onclick="showRecordsList()">观察列表</button>
+<button id="heat-btn" onclick="toggleHeatmap()" title="切换热力图">热力图</button>
+<button id="areas-btn" class="active" onclick="toggleCampusAreas()" title="显示/隐藏高校范围">校园范围</button>
 
+</div>
 <div id="offline-notice">
     <span>地图瓦片加载失败：地图底图需要联网，但你的记录数据仍在本地可用。</span>
     <button onclick="document.getElementById('offline-notice').style.display='none'">知道了</button>
@@ -549,7 +572,7 @@
 
 <div id="records-list-container">
     <div class="list-header">
-        <button onclick="hideRecordsList()" style="background:transparent; color:#333; font-size:24px; padding:0;">←</button>
+        <button onclick="hideRecordsList()" style="background:transparent; color:#333; font-size:14px; padding:6px 8px;">返回</button>
         <div class="list-search-bar">
             <input type="text" id="list-search-input" placeholder="搜索猫咪记录..." oninput="filterList()">
         </div>
@@ -599,19 +622,26 @@
 </div>
 
 <div id="map"></div>
-<button id="add-btn" onclick="startAddingMode()" title="添加猫咪记录">+</button>
+<div id="location-hint" role="status" style="display:none; position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:1100; background:#fff4df; padding:12px 18px; border-radius:12px; box-shadow:0 3px 16px #0002;">
+    请点击地图，选择猫咪出现的位置。
+    <button type="button" onclick="cancelLocationPicking()">返回表单</button>
+</div>
+<button id="add-btn" onclick="startAddingMode()" title="新增观察" aria-label="新增观察">+</button>
 
 <!-- Add Record Modal -->
 <div id="modal">
     <div class="modal-content">
-        <h3>添加猫咪记录</h3>
-        <div id="record-area" class="area-preview">📍 先在地图上选择位置</div>
+        <h3 id="record-modal-title">新增观察</h3>
+        <p id="observation-visibility" style="color:#716259; font-size:13px;">登录后发布，地图观察和照片对所有人公开。</p>
+        <div id="record-area" class="area-preview"> 请先选择观察位置</div>
+        <button type="button" onclick="pickObservationLocation()">在地图上选择位置</button>
         <div class="form-group">
-            <label>猫咪名称/标题</label>
+            <div id="observation-cat-picker" style="margin-bottom:12px;"></div>
+            <label for="record-title">观察标题</label>
             <input type="text" id="record-title" placeholder="例如：小区里的橘猫">
         </div>
         <div class="form-group">
-            <label>描述</label>
+            <label for="record-desc">描述</label>
             <textarea id="record-desc" rows="3" placeholder="描述一下当时的场景..."></textarea>
         </div>
         <div class="form-group">
@@ -626,7 +656,8 @@
         </div>
         <div class="btn-group">
             <button class="btn-cancel" onclick="closeModal()">取消</button>
-            <button class="btn-save" onclick="saveRecord()">保存</button>
+            <div id="observation-error" role="alert" style="color:#b54132;text-align:left;margin-bottom:10px;" hidden></div>
+            <button id="save-observation" class="btn-save" onclick="saveRecord()">保存观察</button>
         </div>
     </div>
 </div>
@@ -645,7 +676,7 @@
             <div id="detail-desc" class="detail-desc" style="max-height: 100px;"></div>
             
             <div class="interaction-bar">
-                <div id="like-btn" class="like-btn">🤍 点赞</div>
+                <div id="like-btn" class="like-btn"><img class="ui-icon " src="../assets/爱心_描边.svg" alt="" aria-hidden="true"> 点赞</div>
                 <span id="like-count" style="font-size: 14px; color: #666;">0</span>
             </div>
             
@@ -654,13 +685,13 @@
                 <div id="comments-list"></div>
                 <div style="display:flex; margin-top:10px; gap:5px;">
                     <input type="text" id="comment-input" placeholder="写下你的评论..." style="flex:1; font-size:13px;">
-                    <button onclick="addComment()" style="padding:5px 10px; font-size:13px; background:#df7d5c; color:white;">发送</button>
+                    <button onclick="addComment()" style="padding:5px 10px; font-size:13px; background:#367f83; color:white;">发送</button>
                 </div>
             </div>
 
             <div class="detail-actions" style="margin-top: 20px;">
                 <button class="btn-save" onclick="locateRecord()">定位</button>
-                <button id="btn-edit" class="btn-cancel" onclick="editMapRecord()" style="background:#f39c12;color:white;display:none;">编辑</button>
+                <button id="btn-edit" class="btn-cancel" onclick="editMapRecord()" style="background:#d5eeeb;color:white;display:none;">编辑</button>
                 <button id="btn-delete" class="btn-cancel" onclick="deleteMapRecord()" style="background:#e74c3c;color:white;display:none;">删除</button>
                 <button class="btn-cancel" onclick="closeDetailModal()">关闭</button>
             </div>
@@ -676,13 +707,17 @@
 <script src="../vendor/leaflet.js"></script>
 <script src="../vendor/leaflet-heat.js"></script>
 <script>
-    const { ipcRenderer } = require('electron');
+    const { ipcRenderer } = require('electron')
+  if (window.parent !== window) document.body.classList.add('embedded-page');
     const { escapeHtml, safeResourceUrl, detectArea, nearestAreaLabel, formatArea, mainRingOf, haversineMeters, clusterRecords, parseRecordTime } = require('../../backend/utils');
     const { loadAreasData, campusOptions } = require('../../backend/areas');
 
     // ==========================================
     // 校园范围图层与位置判定（数据加载后已带 GCJ-02 坐标 polygons_gcj02）
     // ==========================================
+    const { createCatPicker } = require('../js/cat_picker');
+    const catPicker = createCatPicker(document.getElementById('observation-cat-picker'), ipcRenderer);
+    let catProfiles = [];
     const areasData = loadAreasData()
 
     // 初始视野：华工大学城校区（中心取自主环），数据异常时退回固定坐标
@@ -739,16 +774,16 @@
     function renderCampusLayer() {
         campusLayer.clearLayers()
         if (!areasOn) return
-        const campusStyle = { color: '#8f7166', weight: 2, dashArray: '6 5', fillColor: '#8f7166', fillOpacity: 0.05 }
+        const campusStyle = { color: '#7ea1b3', weight: 2, dashArray: '6 5', fillColor: '#7ea1b3', fillOpacity: 0.05 }
         const zoneStyle = { color: '#d8a04e', weight: 1, dashArray: '3 5', fillColor: '#d8a04e', fillOpacity: 0.04 }
         for (const uni of areasData.universities || []) {
             for (const campus of uni.campuses || []) {
                 // polygons_gcj02 是外环数组：L.polygon 直接支持多环（主校区+飞地）
                 if (Array.isArray(campus.polygons_gcj02) && campus.polygons_gcj02.length > 0) {
                     const poly = L.polygon(campus.polygons_gcj02, campusStyle)
-                    poly.bindTooltip(`🏫 ${uni.name}·${campus.name}`, { permanent: true, direction: 'center', className: 'campus-label' })
+                    poly.bindTooltip(`<img class="ui-icon" src="../assets/学校-L.svg" alt="" aria-hidden="true"> ${escapeHtml(uni.name)}·${escapeHtml(campus.name)}`, { permanent: true, direction: 'center', className: 'campus-label' })
                     // 点击校园色块查看该区域汇总（新增打点模式下不弹）
-                    poly.bindPopup(() => buildCampusSummaryPopup(`${uni.name}·${campus.name}`))
+                    poly.bindPopup(() => buildCampusSummaryPopup(`${escapeHtml(uni.name)}·${escapeHtml(campus.name)}`))
                     campusLayer.addLayer(poly)
                 }
                 for (const zone of campus.zones || []) {
@@ -791,7 +826,7 @@
             .filter(c => c.center).length;
 
         el.innerHTML = `
-            <div class="campus-summary-title">🏫 ${escapeHtml(areaValue)}</div>
+            <div class="campus-summary-title"><img class="ui-icon" src="../assets/学校-L.svg" alt="" aria-hidden="true"> ${escapeHtml(areaValue)}</div>
             <div>共 ${records.length} 条打卡记录 · ${clusterCount} 处猫点</div>
             ${latest ? `<div>最近发现：${escapeHtml(latest.title || '未命名')}（${new Date(parseRecordTime(latest)).toLocaleDateString()}）</div>` : '<div>暂无记录，快去发现第一只猫吧</div>'}
             <button>查看这个区域的记录</button>
@@ -817,30 +852,32 @@
     // Icons
     const makeCatIcon = (background) => L.divIcon({
         className: 'cat-marker',
-        html: `<span style="background:${background};">🐱</span>`,
+        html: `<span style="background:${background};"><img class="ui-icon " src="../assets/猫咪.svg" alt="" aria-hidden="true"></span>`,
         iconSize: [42, 42],
         iconAnchor: [21, 21],
         popupAnchor: [0, -20]
     });
-    const myIcon = makeCatIcon('#df7d5c');
-    const otherIcon = makeCatIcon('#8f7166');
+    const myIcon = makeCatIcon('#367f83');
+    const otherIcon = makeCatIcon('#7ea1b3');
 
     async function init() {
         try {
             cloudEnabled = await ipcRenderer.invoke('is-cloud-enabled');
-            document.querySelector('.interaction-bar').style.display = cloudEnabled ? 'flex' : 'none';
-            document.querySelector('.comments-section').style.display = cloudEnabled ? 'block' : 'none';
+            if (!cloudEnabled) document.getElementById('observation-visibility').textContent = '无需登录，保存后可在此电脑查看。';
+            const socialEnabled = await ipcRenderer.invoke('is-social-enabled');
+            document.querySelector('.interaction-bar').style.display = socialEnabled ? 'flex' : 'none';
+            document.querySelector('.comments-section').style.display = socialEnabled ? 'block' : 'none';
             const userResult = await ipcRenderer.invoke('get_current_user_profile');
             currentUser = userResult;
-            loadMapRecords();
         } catch (e) { console.error(e); }
+        await loadMapRecords();
     }
-    init();
 
     // 加载已有记录
     async function loadMapRecords() {
         try {
             const records = await ipcRenderer.invoke('get_map_records');
+            catProfiles = await ipcRenderer.invoke('get_cats') || [];
             if (Array.isArray(records)) {
                 allRecords = records;
                 renderMarkers(allRecords);
@@ -881,12 +918,12 @@
                     <div class="popup-info">
                         <div class="popup-title">${escapeHtml(record.title)}</div>
                         <div class="popup-desc">${escapeHtml(record.desc || '无描述')}</div>
-                        ${areaText ? `<div class="popup-area">🏫 ${escapeHtml(areaText)}</div>` : ''}
+                        ${areaText ? `<div class="popup-area"><img class="ui-icon" src="../assets/学校-L.svg" alt="" aria-hidden="true"> ${escapeHtml(areaText)}</div>` : ''}
                         <div class="user-tag" style="font-size:12px;color:#666;margin-top:5px;display:flex;align-items:center;">
                             ${record.profiles?.avatar_url ? `<img src="${safeResourceUrl(record.profiles.avatar_url)}" style="width:20px;height:20px;border-radius:50%;margin-right:5px;">` : ''}
                              <span>${escapeHtml(record.profiles?.username || '本地记录')}</span>
                         </div>
-                        <div style="text-align:center;margin-top:5px;color:#df7d5c;font-size:12px;">点击查看详情</div>
+                        <div style="text-align:center;margin-top:5px;color:#367f83;font-size:12px;">点击查看详情</div>
                     </div>
                 `;
                 popupEl.addEventListener('click', () => showDetailModalById(record.id));
@@ -905,7 +942,7 @@
         heatOn = !heatOn;
         const btn = document.getElementById('heat-btn');
         btn.classList.toggle('active', heatOn);
-        btn.innerHTML = heatOn ? '🐾 标记' : '🔥 热力图';
+        btn.innerHTML = heatOn ? '<img class="ui-icon " src="../assets/猫爪.svg" alt="" aria-hidden="true"> 标记' : '热力图';
         if (heatLayer) {
             map.removeLayer(heatLayer);
             heatLayer = null;
@@ -926,7 +963,7 @@
             radius: 32,
             blur: 20,
             maxZoom: 15,
-            gradient: { 0.2: '#fde79a', 0.4: '#f9b26a', 0.7: '#df7d5c', 1.0: '#c0392b' }
+            gradient: { 0.2: '#d9ecef', 0.4: '#a2cec9', 0.7: '#65aaa7', 1.0: '#367f83' }
         }).addTo(map);
     }
 
@@ -962,7 +999,7 @@
             
             const imgHtml = mainImg
                 ? `<img src="${safeResourceUrl(mainImg)}">`
-                : '<div style="width:80px;height:80px;background:#f0f0f0;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:20px;">📷</div>';
+                : '<div style="width:80px;height:80px;background:#f0f0f0;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:20px;"><img class="ui-icon " src="../assets/照相机.svg" alt="" aria-hidden="true"></div>';
 
             const dateStr = record.created_at ? new Date(record.created_at).toLocaleDateString() : '';
             const areaText = areaTextOf(record);
@@ -974,10 +1011,10 @@
                     <div class="record-card-title">${escapeHtml(record.title)}</div>
                     <div class="record-card-desc">${escapeHtml(record.desc || '暂无描述')}</div>
                     <div class="record-card-meta">
-                         <span>👤 ${escapeHtml(record.profiles?.username || '本地记录')}</span>
-                        ${dateStr ? `<span>📅 ${escapeHtml(dateStr)}</span>` : ''}
-                        ${areaText ? `<span>🏫 ${escapeHtml(areaText)}</span>` : ''}
-                        ${distText ? `<span>📏 ${distText}</span>` : ''}
+                         <span><img class="ui-icon" src="../assets/用户 (1).svg" alt="" aria-hidden="true"> ${escapeHtml(record.profiles?.username || '本地记录')}</span>
+                        ${dateStr ? `<span><img class="ui-icon" src="../assets/日历.svg" alt="" aria-hidden="true"> ${escapeHtml(dateStr)}</span>` : ''}
+                        ${areaText ? `<span><img class="ui-icon" src="../assets/学校-L.svg" alt="" aria-hidden="true"> ${escapeHtml(areaText)}</span>` : ''}
+                        ${distText ? `<span><img class="ui-icon" src="../assets/标尺.svg" alt="" aria-hidden="true"> ${distText}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1031,7 +1068,9 @@
         
         const date = new Date(record.id); // Assuming ID is timestamp-ish or we have created_at
         const areaText = areaTextOf(record);
+        const linkedCat = catProfiles.find(cat => String(cat.id) === String(record.cat_id));
         document.getElementById('detail-meta').innerText =
+            (record.cat_id ? `猫咪: ${linkedCat?.name || record.cat_name || '档案未找到'} · ID: ${record.cat_id}\n` : '') +
             (areaText ? `所在区域: ${areaText}\n` : '') +
             `记录时间: ${record.created_at ? new Date(record.created_at).toLocaleString() : date.toLocaleString()}`;
 
@@ -1040,7 +1079,7 @@
         document.getElementById('like-count').innerText = '...';
         const likeBtn = document.getElementById('like-btn');
         likeBtn.classList.remove('liked');
-        likeBtn.innerHTML = '🤍 点赞';
+        likeBtn.innerHTML = '<img class="ui-icon " src="../assets/爱心_描边.svg" alt="" aria-hidden="true"> 点赞';
 
         // Interactions
         loadInteractions(record.id);
@@ -1062,10 +1101,10 @@
         likeCount.innerText = likes;
         if (is_liked) {
             likeBtn.classList.add('liked');
-            likeBtn.innerHTML = '❤️ 已赞';
+            likeBtn.innerHTML = '<img class="ui-icon " src="../assets/爱心,实心.svg" alt="" aria-hidden="true"> 已赞';
         } else {
             likeBtn.classList.remove('liked');
-            likeBtn.innerHTML = '🤍 点赞';
+            likeBtn.innerHTML = '<img class="ui-icon " src="../assets/爱心_描边.svg" alt="" aria-hidden="true"> 点赞';
         }
         likeBtn.onclick = () => toggleLike(recordId);
 
@@ -1160,8 +1199,46 @@
 
     // ... Map Adding Logic ...
     function startAddingMode() {
+        editingRecordId = null;
+        currentLatLng = null;
+        clearForm();
+        cancelLocationPicking();
+        updateAreaPreview();
+        document.getElementById('record-modal-title').textContent = '新增观察';
+        focusObservationField('record-title');
+    }
+
+    function focusObservationField(id = 'record-title') {
+        requestAnimationFrame(() => {
+            if (document.getElementById('modal').style.display !== 'flex') return;
+            window.focus();
+            document.getElementById(id).focus({ preventScroll: true });
+        });
+    }
+
+    function showObservationError(message, field) {
+        const errorBox = document.getElementById('observation-error');
+        errorBox.textContent = message;
+        errorBox.hidden = !message;
+        if (field) focusObservationField(field);
+    }
+
+    function pickObservationLocation() {
         isAdding = true;
+        document.getElementById('map').classList.add('location-picking');
+        document.getElementById('modal').style.display = 'none';
+        document.getElementById('location-hint').style.display = 'block';
         document.getElementById('map').style.cursor = 'crosshair';
+        map.closePopup();
+    }
+
+    function cancelLocationPicking() {
+        isAdding = false;
+        document.getElementById('map').classList.remove('location-picking');
+        document.getElementById('location-hint').style.display = 'none';
+        document.getElementById('map').style.cursor = '';
+        document.getElementById('modal').style.display = 'flex';
+        focusObservationField();
     }
 
     // The workspace shell owns the primary action button. Keep the map view
@@ -1173,9 +1250,8 @@
     map.on('click', function(e) {
         if (!isAdding) return;
         currentLatLng = e.latlng;
-        selectedImagePaths = [];
-        updateImagePreview();
         updateAreaPreview();
+        cancelLocationPicking();
         map.closePopup(); // 新增模式下点击校区色块不应停留汇总弹窗
         document.getElementById('modal').style.display = 'flex';
         isAdding = false;
@@ -1187,11 +1263,11 @@
         const box = document.getElementById('record-area');
         if (!box) return;
         if (!currentLatLng) {
-            box.textContent = '📍 先在地图上选择位置';
+            box.textContent = '先在地图上选择位置';
             return;
         }
         const { text } = areaOfCoords(currentLatLng.lat, currentLatLng.lng);
-        box.textContent = `📍 ${text}`;
+        box.textContent = text;
     }
 
     function closeModal() {
@@ -1201,6 +1277,8 @@
     }
 
     function clearForm() {
+        showObservationError('');
+        catPicker.setValue();
         document.getElementById('record-title').value = '';
         document.getElementById('record-desc').value = '';
         selectedImagePaths = [];
@@ -1236,15 +1314,17 @@
     let editingRecordId = null;
 
     async function saveRecord() {
-        const title = document.getElementById('record-title').value;
+        showObservationError('');
+        try { catPicker.validate(); } catch (error) { showObservationError(error.message); return; }
+        const title = document.getElementById('record-title').value.trim();
         const desc = document.getElementById('record-desc').value;
 
         if (!title) {
-            alert('请输入标题');
+            showObservationError('请输入标题', 'record-title');
             return;
         }
         if (!currentLatLng) {
-            alert('请先在地图上选择位置');
+            showObservationError('请先在地图上选择位置');
             return;
         }
 
@@ -1257,24 +1337,34 @@
             title: title,
             desc: desc,
             images: selectedImagePaths,
+            cat_id: catPicker.value,
             area: match ? formatArea(match) : ''
         };
 
+        const saveButton = document.getElementById('save-observation');
+        if (saveButton.disabled) return;
+        saveButton.disabled = true;
+        saveButton.textContent = '正在保存…';
         try {
+            let saved;
             if (editingRecordId) {
-                await ipcRenderer.invoke('update_map_record', { 
+                saved = await ipcRenderer.invoke('update_map_record', {
                     id: editingRecordId, 
                     record: record 
                 });
             } else {
                 record.id = Date.now();
-                await ipcRenderer.invoke('add_map_record', record);
+                saved = await ipcRenderer.invoke('add_map_record', record);
             }
-            loadMapRecords(); // Reload all
+            if (!saved) throw new Error('记录未保存，请重试');
+            await loadMapRecords(); // 保存成功后刷新地图
             closeModal();
         } catch (err) {
             console.error(err);
-            alert('保存失败：' + err.message);
+            showObservationError('保存失败：' + err.message);
+        } finally {
+            saveButton.disabled = false;
+            saveButton.textContent = '保存观察';
         }
     }
 
@@ -1434,14 +1524,14 @@
             const newest = cluster.seed;
             const areaText = areaTextOf(newest);
             card.innerHTML = `
-                <div style="width:80px;height:80px;background:#fdeee6;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:26px;">🍪</div>
+                <div style="width:80px;height:80px;background:#eaf6f4;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:26px;"><img class="ui-icon cluster-icon" src="../assets/猫爪.svg" alt="" aria-hidden="true"></div>
                 <div class="record-card-info">
                     <div class="record-card-title">${escapeHtml(newest.title || '未命名位置')}</div>
                     <div class="record-card-desc">${escapeHtml(newest.desc || '暂无描述')}</div>
                     <div class="record-card-meta">
-                        <span style="color:#df7d5c;font-weight:700;">📍 ${cluster.members.length} 条记录</span>
-                        ${areaText ? `<span>🏫 ${escapeHtml(areaText)}</span>` : ''}
-                        ${cluster.center ? `<span>📏 ${fmtDistance(recordDistance(newest, map.getCenter()))}</span>` : ''}
+                        <span style="color:#367f83;font-weight:700;"><img class="ui-icon " src="../assets/adress.svg" alt="" aria-hidden="true"> ${cluster.members.length} 条记录</span>
+                        ${areaText ? `<span><img class="ui-icon" src="../assets/学校-L.svg" alt="" aria-hidden="true"> ${escapeHtml(areaText)}</span>` : ''}
+                        ${cluster.center ? `<span><img class="ui-icon" src="../assets/标尺.svg" alt="" aria-hidden="true"> ${fmtDistance(recordDistance(newest, map.getCenter()))}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1460,7 +1550,7 @@
         if (chip) return;
         chip = document.createElement('div');
         chip.className = 'cluster-back';
-        chip.innerHTML = '← 返回全部位置';
+        chip.innerHTML = '返回全部位置';
         chip.onclick = () => {
             currentCluster = null;
             filterList();
@@ -1496,9 +1586,11 @@
     function editMapRecord() {
         if (!currentDetailRecord) return;
 
+        document.getElementById('record-modal-title').textContent = '编辑观察';
         editingRecordId = currentDetailRecord.id;
         currentLatLng = { lat: currentDetailRecord.lat, lng: currentDetailRecord.lng };
 
+        catPicker.setValue(currentDetailRecord.cat_id);
         document.getElementById('record-title').value = currentDetailRecord.title;
         document.getElementById('record-desc').value = currentDetailRecord.desc || '';
 
@@ -1507,14 +1599,34 @@
         updateAreaPreview();
 
         closeDetailModal();
+        showObservationError('');
         document.getElementById('modal').style.display = 'flex';
+        focusObservationField();
     }
 
     renderCampusLayer();
     campusLayer.addTo(map);
     populateAreaFilter();
 
-    loadMapRecords();
+    const initialRecords = init();
+    let locatedHighlight = null;
+    async function focusRecordOnMap(target) {
+        if (!Number.isFinite(target?.lat) || !Number.isFinite(target?.lng) || Math.abs(target.lat)>90 || Math.abs(target.lng)>180) return;
+        await initialRecords;
+        if (heatOn) toggleHeatmap();
+        if (!markers.some(item => String(item.recordId) === String(target.id))) await loadMapRecords();
+        hideRecordsList();
+        map.setView([target.lat, target.lng], 18);
+        const marker = markers.find(item => String(item.recordId) === String(target.id));
+        if (locatedHighlight) map.removeLayer(locatedHighlight);
+        locatedHighlight = L.circleMarker([target.lat, target.lng], { radius: 22, color: '#367f83', weight: 2, fillOpacity: 0.08 }).addTo(map);
+        if (marker) marker.openPopup();
+    }
+    window.addEventListener('message', event => {
+        if (event.source === window.parent && event.data?.type === 'focus-map-record') focusRecordOnMap(event.data.record);
+    });
+    ipcRenderer.on('locate-map-record', (_event, target) => focusRecordOnMap(target));
+    window.parent.postMessage({ type: 'map-ready' }, '*');
 </script>
 </body>
 </html>

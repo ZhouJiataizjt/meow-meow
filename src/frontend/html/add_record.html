@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>添加猫咪记录</title>
+    <link rel="icon" href="../assets/favicon.ico">
     <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
     <style>
         /* Extend common styles to other input types */
         input[type="datetime-local"],
@@ -27,8 +29,9 @@
             margin-top: 10px;
         }
     </style>
+    <link rel="stylesheet" href="../css/light.css">
 </head>
-<body>
+<body class="form-page">
     <div class="container">
         <h2>添加猫咪记录</h2>
         <form id="recordForm">
@@ -39,7 +42,7 @@
                 <input type="text" id="location" required>
             </label>
             <label>数量：
-                <input type="number" id="count" required>
+                <input type="number" id="count" min="1" step="1" value="1" required>
             </label>
             <label>猫咪/品种：
                 <input type="text" id="species" required>
@@ -47,14 +50,12 @@
             <label>毛色/特征：
                 <input type="text" id="gender" required>
             </label>
-            <label>关联猫咪档案：
-                <select id="cat_id"></select>
-            </label>
+            <div id="observation-cat-picker"></div>
             <label>所在校园（可选）：
                 <select id="area"></select>
             </label>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                <button type="button" id="ai-recognize-btn" style="flex:1; background:#6c5ce7;">📷 拍照识别品种</button>
+                <button type="button" id="ai-recognize-btn" style="flex:1; background:#6c5ce7;"><img class="ui-icon " src="../assets/照相机.svg" alt="" aria-hidden="true"> 拍照识别品种</button>
             </div>
             <div id="ai-result" style="display:none; font-size:12px; color:#666; background:#f6f3ef; border-radius:8px; padding:8px 10px; margin-bottom:10px; white-space:pre-wrap; max-height:110px; overflow-y:auto;"></div>
             <button type="submit" style="width: 100%; margin-top: 10px;">提交</button>
@@ -66,18 +67,9 @@
     const { parseRecordTime } = require('../../backend/utils')
     const { loadAreasData, campusOptions } = require('../../backend/areas')
 
-    // 档案下拉框：可把这条记录归到某只常驻猫咪名下
-    async function loadCatOptions() {
-        const select = document.getElementById('cat_id')
-        try {
-            const cats = await ipcRenderer.invoke('get_cats') || []
-            select.innerHTML = '<option value="">不关联档案</option>' +
-                cats.map(c => `<option value="${String(c.id).replace(/"/g, '&quot;')}">${String(c.name).replace(/</g, '&lt;').replace(/&/g, '&amp;')}</option>`).join('')
-        } catch (e) {
-            select.innerHTML = '<option value="">不关联档案</option>'
-        }
-    }
-    loadCatOptions()
+    const { createCatPicker } = require('../js/cat_picker')
+    const catPicker = createCatPicker(document.getElementById('observation-cat-picker'), ipcRenderer)
+    catPicker.setValue()
 
     // 所在校园下拉：默认带出最近一次地图打卡的校园
     async function loadAreaOptions() {
@@ -115,20 +107,24 @@
         if (colorMatch) document.getElementById('gender').value = colorMatch[1].split(/[，,；;。]/)[0].trim()
     })
 
+    const now = new Date()
+    document.getElementById('time').value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
     const form = document.getElementById('recordForm')
     form.addEventListener('submit', async (e) => {
         e.preventDefault()
+        try { catPicker.validate() } catch (error) { alert(error.message); return }
         const newRecord = {
             time: document.getElementById('time').value,
             location: document.getElementById('location').value,
             count: document.getElementById('count').value,
             species: document.getElementById('species').value,
             gender: document.getElementById('gender').value,
-            cat_id: document.getElementById('cat_id').value || null,
+            cat_id: catPicker.value,
             area: document.getElementById('area').value || ''
         }
         try {
-            await ipcRenderer.invoke('add_record', newRecord)
+            const saved = await ipcRenderer.invoke('add_record', newRecord)
+            if (!saved) throw new Error('记录未保存，请重试')
             window.close() // 关闭弹窗
         } catch (err) {
             console.error(err);

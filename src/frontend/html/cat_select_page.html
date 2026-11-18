@@ -3,21 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <title>猫咪图鉴</title>
+    <link rel="icon" href="../assets/favicon.ico">
     <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
+    <link rel="stylesheet" href="../css/light.css">
 </head>
-<body>
+<body class="discovery-page">
     <div class="container">
-        <div class="grid-container">
-            <div style="text-align: center;">
-                <button class="w-100" onclick="area_search()" style="height: 100px; font-size: 18px;">
-                    🌍<br>按地区查询猫咪
-                </button>
-            </div>
-            <div style="text-align: center;">
-                <button class="w-100" onclick="name_search()" style="height: 100px; font-size: 18px;">
-                    🐱<br>按名称/品种查询
-                </button>
-            </div>
+        <div class="workspace-intro"><h2>从好奇开始认识它们</h2><p>按生活区域探索，或寻找你感兴趣的猫咪品种。</p></div>
+        <div class="guide-options">
+            <button class="guide-option" onclick="area_search()"><img class="ui-icon" src="../assets/地球.svg" alt=""><span><strong>按地区探索</strong><small>看看校园、小区和公园里有哪些猫咪</small></span></button>
+            <button class="guide-option" onclick="name_search()"><img class="ui-icon" src="../assets/猫咪2.svg" alt=""><span><strong>按名称或品种查找</strong><small>了解熟悉的名字，认识不同的花色与习性</small></span></button>
         </div>
     </div>
 

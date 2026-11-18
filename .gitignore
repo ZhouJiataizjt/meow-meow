@@ -1,4 +1,8 @@
 node_modules/
+artifacts/
+.agents/
+build_output/
+server/node_modules/
 __pycache__/
 *.pyc
 *.pyo

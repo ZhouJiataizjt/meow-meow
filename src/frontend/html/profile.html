@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人档案</title>
+    <link rel="icon" href="../assets/favicon.ico">
+    <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/icons.css">
+    <link rel="stylesheet" href="../css/light.css">
+</head>
+<body class="profile-page">
+    <main class="profile-layout">
+        <aside class="profile-identity">
+            <img src="../assets/猫咪2.svg" alt="">
+            <h2 id="identity-name">猫咪观察员</h2>
+            <p id="identity-mode">你的观察者档案</p>
+        </aside>
+        <form class="profile-form" id="profile-form">
+            <h2>编辑个人资料</h2>
+            <p>给观察记录署上你的名字。昵称可以更改，用户 ID 始终保持不变。</p>
+            <label for="profile-name">昵称</label>
+            <input id="profile-name" name="username" type="text" maxlength="60" required autocomplete="nickname" aria-describedby="name-help" disabled>
+            <small id="name-help">1–30 个字符，将用于显示你的观察者名称。</small>
+            <label for="profile-id">用户 ID</label>
+            <input id="profile-id" type="text" readonly aria-describedby="id-help">
+            <small id="id-help">系统分配的唯一标识，只读，可选中复制。</small>
+            <div id="profile-email-group" hidden>
+                <label for="profile-email">账号邮箱</label>
+                <input id="profile-email" type="text" readonly>
+            </div>
+            <div class="profile-actions">
+                <button id="profile-save" type="submit" disabled>保存修改</button>
+                <span id="profile-message" class="profile-message" role="status" aria-live="polite">正在读取资料…</span>
+                <button id="profile-login" type="button" class="secondary" hidden>登录账号</button>
+                <button id="profile-retry" type="button" class="secondary" hidden>重新加载</button>
+            </div>
+        </form>
+    </main>
+    <script>
+        const { ipcRenderer } = require('electron')
+        const nameField = document.getElementById('profile-name')
+        const saveButton = document.getElementById('profile-save')
+        const message = document.getElementById('profile-message')
+        let currentId = null
+        let savedName = ''
+        function status(text, error = false) {
+            message.textContent = text
+            message.classList.toggle('error', error)
+        }
+        async function loadProfile() {
+            saveButton.disabled = true
+            document.getElementById('profile-retry').hidden = true
+            try {
+                const current = await ipcRenderer.invoke('get_current_user_profile')
+                if (!current) {
+                    status('登录后即可编辑你的个人档案。')
+                    document.getElementById('profile-login').hidden = false
+                    return
+                }
+                currentId = current.id
+                savedName = current.profile?.username || '猫咪观察员'
+                nameField.value = savedName
+                nameField.disabled = current.profile_editable === false
+                document.getElementById('profile-id').value = currentId
+                document.getElementById('identity-name').textContent = savedName
+                document.getElementById('identity-mode').textContent = current.email ? '云端观察者' : '本地观察者'
+                document.getElementById('profile-email-group').hidden = !current.email
+                document.getElementById('profile-email').value = current.email || ''
+                document.getElementById('profile-login').hidden = true
+                status(current.profile_editable === false ? '服务器尚未启用个人档案编辑，需要更新云端服务。' : '', current.profile_editable === false)
+            } catch (error) {
+                status('资料读取失败：' + error.message, true)
+                document.getElementById('profile-retry').hidden = false
+            }
+        }
+        nameField.addEventListener('input', () => {
+            saveButton.disabled = !currentId || nameField.value.trim() === savedName
+            status('')
+        })
+        document.getElementById('profile-form').addEventListener('submit', async event => {
+            event.preventDefault()
+            const username = nameField.value.trim()
+            if (!username || [...username].length > 30) { status('请填写 1–30 个字符的昵称。', true); return }
+            if (!currentId) return
+            saveButton.disabled = true
+            nameField.disabled = true
+            status('正在保存…')
+            try {
+                const result = await ipcRenderer.invoke('update_profile', { username })
+                if (!result?.success) throw new Error(result?.error || '保存失败，请稍后重试')
+                savedName = username
+                nameField.value = username
+                document.getElementById('identity-name').textContent = username
+                status('已保存')
+                window.parent.postMessage({ type: 'profile-updated' }, '*')
+            } catch (error) {
+                status(error.message, true)
+                saveButton.disabled = false
+            } finally { nameField.disabled = false }
+        })
+        document.getElementById('profile-login').addEventListener('click', async () => {
+            await ipcRenderer.invoke('open_login_window')
+        })
+        document.getElementById('profile-retry').addEventListener('click', loadProfile)
+        window.addEventListener('focus', () => { if (!currentId) loadProfile() })
+        loadProfile()
+    </script>
+</body>
+</html>
