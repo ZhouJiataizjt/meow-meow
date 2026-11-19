@@ -4,9 +4,9 @@
 
 ## 下载与版本
 
-正式版 **v2.3.0** 提供单个 Windows x64 安装包，下载后双击安装。[发布说明](https://github.com/ZhouJiataizjt/meow-meow/releases/tag/v2.3.0) · [下载安装包](https://github.com/ZhouJiataizjt/meow-meow/releases/download/v2.3.0/meow-meow-map-2.3.0-win-x64-Setup.exe)
+正式版 **v2.3.1** 提供单个 Windows x64 安装包，下载后双击安装。[发布说明](https://github.com/ZhouJiataizjt/meow-meow/releases/tag/v2.3.1) · [下载安装包](https://github.com/ZhouJiataizjt/meow-meow/releases/download/v2.3.1/meow-meow-map-2.3.1-win-x64-Setup.exe)
 
-本版新增「喵喵轨迹」，修复单击定位和统计图表对齐，并更新登录界面和个人默认头像。公开示例打卡存于云端。
+本版修复未登录或查看他人打卡时的猫咪头像显示，并为自选猫咪头像增加位置、缩放和裁剪预览。公开示例打卡存于云端。
 
 ## 使用
 

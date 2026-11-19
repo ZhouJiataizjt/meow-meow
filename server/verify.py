@@ -113,6 +113,14 @@ try:
     map_record['images'] = []
     check(request('/map_records/' + map_record['id'], 'PUT', map_record, token)[0] == 200, 'remove photo from public map')
     check(request(image['url'])[0] == 401, 'unreferenced photo no longer public')
+    # An avatar becomes public only while its cat is linked to an observation.
+    check(request('/cats/' + cat_id, 'PUT', {'name': 'Avatar verification', 'avatar': image['url']}, token)[0] == 200, 'set uploaded cat avatar')
+    check(request(image['url'])[1] == png, 'linked cat avatar readable without login')
+    check(request(image['url'], token=other)[1] == png, 'linked cat avatar readable by another account')
+    public_items = request('/map_records')[1]['items']
+    check(any(row['id'] == map_record['id'] and row.get('cat_avatar') == image['url'] for row in public_items), 'public map returns uploaded cat avatar')
+    check(request('/cats/' + cat_id, 'PUT', {'name': 'Avatar verification', 'avatar': 'builtin:cat'}, token)[0] == 200, 'switch back to built-in cat avatar')
+    check(request(image['url'])[0] == 401, 'replaced avatar is no longer public')
     import http.client
     connection = http.client.HTTPConnection('127.0.0.1', 8091, timeout=10)
     connection.putrequest('POST', '/uploads')

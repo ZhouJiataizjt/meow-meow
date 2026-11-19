@@ -120,7 +120,7 @@ async function start() {
                 const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload
                 const publicRecord = { id: row.id, user_id: row.user_id, cat_name: row.cat_name,
                     profiles: { username: row.username || '猫友 ' + row.user_id.slice(0, 6) } }
-                if (builtinAvatars.has(row.cat_avatar)) publicRecord.cat_avatar = row.cat_avatar
+                if (builtinAvatars.has(row.cat_avatar) || /^\/uploads\/[a-f0-9-]{36}$/.test(row.cat_avatar || '')) publicRecord.cat_avatar = row.cat_avatar
                 for (const key of ['title','desc','lat','lng','created_at','time','cat_id','images','image','area','university','campus','zone','is_demo','demo_batch','species','count']) {
                     if (payload[key] !== undefined) publicRecord[key] = payload[key]
                 }
@@ -137,7 +137,7 @@ async function start() {
         // A photo is public while referenced by an observation from its owner.
         if (req.method === 'GET' && parts[0] === 'uploads' && /^[a-f0-9-]{36}$/.test(parts[1] || '')) {
             const imagePath = '/uploads/' + parts[1]
-            const rows = await query("SELECT u.mime FROM uploads u WHERE u.id=? AND EXISTS (SELECT 1 FROM entries e WHERE e.user_id=u.user_id AND e.kind IN ('records','map_records') AND (JSON_CONTAINS(e.payload,JSON_QUOTE(?),'$.images') OR JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.image'))=?))", [parts[1], imagePath, imagePath])
+            const rows = await query("SELECT u.mime FROM uploads u WHERE u.id=? AND EXISTS (SELECT 1 FROM entries e WHERE e.user_id=u.user_id AND e.kind IN ('records','map_records') AND (JSON_CONTAINS(e.payload,JSON_QUOTE(?),'$.images') OR JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.image'))=?)) OR (u.id=? AND EXISTS (SELECT 1 FROM entries c JOIN entries e ON e.user_id=c.user_id AND e.kind IN ('records','map_records') AND JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))=c.id WHERE c.user_id=u.user_id AND c.kind='cats' AND JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.avatar'))=?))", [parts[1], imagePath, imagePath, parts[1], imagePath])
             if (rows[0]) {
                 const buffer = await fs.readFile(path.join(uploadDir, parts[1]))
                 res.writeHead(200, { 'Content-Type': rows[0].mime, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
