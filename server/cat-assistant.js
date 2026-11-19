@@ -1,3 +1,4 @@
+const { catOwnerSql } = require('./cat-identity')
 const { createInterface } = require('node:readline')
 const { Readable } = require('node:stream')
 const { universities } = require('../data/areas.json')
@@ -14,7 +15,7 @@ const sightingsSql = `
             JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.created_at'))),40) AS observed_at,
         JSON_EXTRACT(e.payload,'$.lat') AS lat, JSON_EXTRACT(e.payload,'$.lng') AS lng,
         (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.is_demo')), '') IN ('true','1')) AS is_demo
-    FROM entries e LEFT JOIN entries c ON c.user_id=e.user_id AND c.kind='cats'
+    FROM entries e LEFT JOIN entries c ON c.user_id=${catOwnerSql('e')} AND c.kind='cats'
         AND c.id=JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))
     WHERE e.kind IN ('records','map_records')
 `

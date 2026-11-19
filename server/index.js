@@ -7,6 +7,7 @@ const { promisify } = require('node:util')
 const { findSightings, askDashScope, campusInventory } = require('./cat-assistant')
 const builtinAvatars = new Set(require('../data/cat-avatar-presets.json').map(preset => preset.id))
 const { profileUpdate } = require('../src/backend/user_profile')
+const { parseCatReference, projectObservation, projectCat, catOwnerSql } = require('./cat-identity')
 const mysql = require('mysql2/promise')
 const scrypt = promisify(crypto.scrypt)
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
@@ -110,7 +111,7 @@ async function start() {
                 SELECT e.user_id,e.kind,e.id,e.payload,p.username,
                     JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.name')) AS cat_name,
                     JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.avatar')) AS cat_avatar
-                FROM entries e LEFT JOIN entries c ON c.user_id=e.user_id AND c.kind='cats'
+                FROM entries e LEFT JOIN entries c ON c.user_id=${catOwnerSql('e')} AND c.kind='cats'
                     AND c.id=JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))
                 LEFT JOIN user_profiles p ON p.user_id=e.user_id
                 WHERE e.kind IN (${kinds})
@@ -121,7 +122,7 @@ async function start() {
                 const publicRecord = { id: row.id, user_id: row.user_id, cat_name: row.cat_name,
                     profiles: { username: row.username || '猫友 ' + row.user_id.slice(0, 6) } }
                 if (builtinAvatars.has(row.cat_avatar) || /^\/uploads\/[a-f0-9-]{36}$/.test(row.cat_avatar || '')) publicRecord.cat_avatar = row.cat_avatar
-                for (const key of ['title','desc','lat','lng','created_at','time','cat_id','images','image','area','university','campus','zone','is_demo','demo_batch','species','count']) {
+                for (const key of ['title','desc','lat','lng','created_at','time','cat_id','cat_owner_id','images','image','area','university','campus','zone','is_demo','demo_batch','species','count']) {
                     if (payload[key] !== undefined) publicRecord[key] = payload[key]
                 }
                 if (publicList) {
@@ -130,14 +131,14 @@ async function start() {
                         if (payload[key] !== undefined) publicRecord[key] = payload[key]
                     }
                 }
-                return publicRecord
+                return projectObservation(publicRecord, row.user_id)
             })
             return reply(res, 200, { items, nextOffset: rows.length > 100 ? offset + 100 : null })
         }
         // A photo is public while referenced by an observation from its owner.
         if (req.method === 'GET' && parts[0] === 'uploads' && /^[a-f0-9-]{36}$/.test(parts[1] || '')) {
             const imagePath = '/uploads/' + parts[1]
-            const rows = await query("SELECT u.mime FROM uploads u WHERE u.id=? AND EXISTS (SELECT 1 FROM entries e WHERE e.user_id=u.user_id AND e.kind IN ('records','map_records') AND (JSON_CONTAINS(e.payload,JSON_QUOTE(?),'$.images') OR JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.image'))=?)) OR (u.id=? AND EXISTS (SELECT 1 FROM entries c JOIN entries e ON e.user_id=c.user_id AND e.kind IN ('records','map_records') AND JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))=c.id WHERE c.user_id=u.user_id AND c.kind='cats' AND JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.avatar'))=?))", [parts[1], imagePath, imagePath, parts[1], imagePath])
+            const rows = await query("SELECT u.mime FROM uploads u WHERE u.id=? AND EXISTS (SELECT 1 FROM entries e WHERE e.user_id=u.user_id AND e.kind IN ('records','map_records') AND (JSON_CONTAINS(e.payload,JSON_QUOTE(?),'$.images') OR JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.image'))=?)) OR (u.id=? AND EXISTS (SELECT 1 FROM entries c JOIN entries e ON COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_owner_id')),'null'),e.user_id)=c.user_id AND e.kind IN ('records','map_records') AND JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))=c.id WHERE c.user_id=u.user_id AND c.kind='cats' AND JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.avatar'))=?))", [parts[1], imagePath, imagePath, parts[1], imagePath])
             if (rows[0]) {
                 const buffer = await fs.readFile(path.join(uploadDir, parts[1]))
                 res.writeHead(200, { 'Content-Type': rows[0].mime, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
@@ -250,14 +251,37 @@ async function start() {
                 return res.end(buffer)
             }
         }
+        if (url.pathname === '/cats/search' && req.method === 'GET') {
+            const term = String(url.searchParams.get('q') || '').trim()
+            const offset = Number(url.searchParams.get('offset') || 0)
+            if (!term || term.length > 170 || !Number.isSafeInteger(offset) || offset < 0 || offset > 10000) throw failure(400, '请输入猫咪名字或 ID')
+            const rows = await query(`SELECT c.user_id,c.id,c.payload FROM entries c WHERE c.kind='cats'
+                AND (LOCATE(?,JSON_UNQUOTE(JSON_EXTRACT(c.payload,'$.name')))>0 OR LOCATE(?,c.id)>0 OR CONCAT(c.user_id,'~',c.id)=?)
+                ORDER BY (CONCAT(c.user_id,'~',c.id)=?) DESC,c.created_at DESC,c.user_id,c.id LIMIT 51 OFFSET ${offset}`, [term, term, term, term])
+            return reply(res, 200, { items: rows.slice(0,50).map(row => projectCat(row, user.id, true)), nextOffset: rows.length > 50 ? offset + 50 : null })
+        }
         const kind = parts[0]
         if (!kinds.has(kind) || parts.length > 2) throw failure(404, '接口不存在')
-        const id = parts[1] ? decodeURIComponent(parts[1]) : null
+        let id = parts[1] ? decodeURIComponent(parts[1]) : null
+        if (id && kind === 'cats') {
+            const ref = parseCatReference(id, user.id)
+            if (!ref) throw failure(400, '无效猫咪 ID')
+            if (ref.owner !== user.id) throw failure(403, '只有创建者可以修改猫咪基础资料')
+            id = ref.id
+        }
         if (id && (id.length > 80 || !/^[\w-]+$/.test(id))) throw failure(400, '无效 ID')
         if (req.method === 'GET' && !id) {
+            if (kind === 'cats') {
+                const rows = await query(`SELECT c.user_id,c.id,c.payload FROM entries c WHERE c.kind='cats'
+                    AND (c.user_id=? OR EXISTS (SELECT 1 FROM entries e WHERE e.user_id=? AND e.kind IN ('records','map_records')
+                        AND ${catOwnerSql('e')}=c.user_id AND JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))=c.id))
+                    ORDER BY c.created_at DESC,c.user_id,c.id LIMIT 1001`, [user.id, user.id])
+                if (rows.length > 1000) throw failure(413, '猫咪数量超过当前版本读取上限')
+                return reply(res, 200, rows.map(row => projectCat(row, user.id)))
+            }
             const rows = await query('SELECT payload FROM entries WHERE user_id=? AND kind=? ORDER BY created_at DESC LIMIT 1001', [user.id, kind])
             if (rows.length > 1000) throw failure(413, '记录数量超过当前版本读取上限')
-            return reply(res, 200, rows.map(row => typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload))
+            return reply(res, 200, rows.map(row => projectObservation(typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload, user.id)))
         }
         if ((req.method === 'POST' && !id) || (req.method === 'PUT' && id)) {
             const input = await json(req)
@@ -267,10 +291,15 @@ async function start() {
             if (!/^[\w-]{1,80}$/.test(entryId)) throw failure(400, '无效 ID')
             if (kind === 'cats' && (!String(input.name || '').trim() || String(input.name).length > 80)) throw failure(400, '昵称必填且不能超过 80 字')
             if (kind === 'map_records' && (!Number.isFinite(Number(input.lat)) || !Number.isFinite(Number(input.lng)) || Math.abs(Number(input.lat)) > 90 || Math.abs(Number(input.lng)) > 180)) throw failure(400, '地图坐标无效')
+            delete input.cat_owner_id
             if (input.cat_id) {
-                const cats = await query("SELECT id FROM entries WHERE user_id=? AND kind='cats' AND id=?", [user.id, String(input.cat_id)])
-                if (!cats.length) throw failure(400, '关联猫咪不属于当前账户')
-            }
+                const ref = parseCatReference(input.cat_id, user.id)
+                if (!ref) throw failure(400, '无效猫咪 ID')
+                const cats = await query("SELECT id FROM entries WHERE user_id=? AND kind='cats' AND id=?", [ref.owner, ref.id])
+                if (!cats.length) throw failure(400, '关联猫咪不存在，请重新搜索')
+                input.cat_id = ref.id
+                input.cat_owner_id = ref.owner
+            } else if (input.cat_id === null || input.cat_id === '') input.cat_owner_id = null
             const current = await query('SELECT payload FROM entries WHERE user_id=? AND kind=? AND id=?', [user.id, kind, entryId])
             if (id && !current.length) throw failure(404, '记录不存在')
             if (!id && current.length) throw failure(409, '记录 ID 已存在')
@@ -293,10 +322,15 @@ async function start() {
             payload.created_at = old.created_at || new Date().toISOString()
             if (id) await query('UPDATE entries SET payload=? WHERE user_id=? AND kind=? AND id=?', [JSON.stringify(payload), user.id, kind, id])
             else await query('INSERT INTO entries (user_id,kind,id,payload) VALUES (?,?,?,?)', [user.id, kind, entryId, JSON.stringify(payload)])
-            return reply(res, id ? 200 : 201, payload)
+            return reply(res, id ? 200 : 201, kind === 'cats' ? projectCat({ user_id: user.id, id: entryId, payload }, user.id) : projectObservation(payload, user.id))
         }
         if (req.method === 'DELETE' && id) {
-            if (kind === 'cats') await query("UPDATE entries SET payload=JSON_REMOVE(payload,'$.cat_id') WHERE user_id=? AND kind IN ('records','map_records') AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.cat_id'))=?", [user.id, id])
+            if (kind === 'cats') {
+                const shared = await query(`SELECT e.id FROM entries e WHERE e.user_id<>? AND e.kind IN ('records','map_records')
+                    AND ${catOwnerSql('e')}=? AND JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.cat_id'))=? LIMIT 1`, [user.id, user.id, id])
+                if (shared.length) throw failure(409, '这只猫已有其他用户的观察记录，不能删除共享档案')
+            }
+            if (kind === 'cats') await query("UPDATE entries SET payload=JSON_REMOVE(payload,'$.cat_id') WHERE user_id=? AND kind IN ('records','map_records') AND COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.cat_owner_id')),'null'),user_id)=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.cat_id'))=?", [user.id, user.id, id])
             const result = await query('DELETE FROM entries WHERE user_id=? AND kind=? AND id=?', [user.id, kind, id])
             if (!result.affectedRows) throw failure(404, '记录不存在')
             return reply(res, 200, { ok: true })

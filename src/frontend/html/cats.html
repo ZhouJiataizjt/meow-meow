@@ -132,7 +132,7 @@
         <div class="cat-search"><label for="cat-search">搜索猫咪档案</label><input id="cat-search" type="search" placeholder="搜索昵称、ID、品种、特征或备注"><span id="cat-search-count" aria-live="polite"></span></div>
         <div id="cat-grid" class="cat-grid"></div>
         <div id="empty-tip" class="empty-tip" style="display:none;">
-            <img class="empty-art" src="../assets/cat-avatars/blue.svg" alt="">还没有猫咪档案。给常驻的那只猫建一个档案吧，之后的每次相遇都会记录在这里。
+            <img class="empty-art" src="../assets/cat-avatars/blue.svg" alt="">还没有猫咪档案。新增观察时搜索并选中已有猫咪，保存后会自动收录到这里；找不到时可以新建。
         </div>
     </div>
 
@@ -291,7 +291,7 @@
                     </div>
                 </div>
                 <div class="cat-card-meta">
-                    <span>相遇 ${sightings.length} 次</span>
+                    <span>${cat.is_mine === false ? '共享档案 · ' : ''}相遇 ${sightings.length} 次</span>
                     ${lastTime ? `<span>最近：${escapeHtml(lastTime)}</span>` : ''}
                 </div>
             `
@@ -305,6 +305,7 @@
         if (!cat) return
         currentCatId = cat.id
 
+        for (const button of document.querySelectorAll('[onclick="editCurrentCat()"], [onclick="deleteCat()"]')) button.hidden = cat.is_mine === false
         document.getElementById('detail-name').textContent = cat.name
         const sightings = sightingsOf(cat.id)
         const infoHtml = `
@@ -312,7 +313,7 @@
             <div class="cat-info-row" style="overflow-wrap:anywhere;"><b>固定 ID：</b>${escapeHtml(cat.id)}</div>
             <div class="cat-info-row"><b>品种/花色：</b>${escapeHtml(cat.species || '未知')}</div>
             <div class="cat-info-row"><b>外貌特征：</b>${escapeHtml(cat.features || '暂无记录')}</div>
-            <div class="cat-info-row"><b>备注：</b>${escapeHtml(cat.notes || '暂无')}</div>
+            <div class="cat-info-row"><b>${cat.is_mine === false ? '资料维护' : '备注'}：</b>${escapeHtml(cat.is_mine === false ? '基础资料由创建者维护，时间线展示我的观察。' : cat.notes || '暂无')}</div>
         `
         const info = document.getElementById('detail-info')
         info.innerHTML = infoHtml
@@ -367,7 +368,7 @@
 
     function editCurrentCat() {
         const cat = cats.find(c => String(c.id) === String(currentCatId))
-        if (!cat) return
+        if (!cat || cat.is_mine === false) return
         closeCatDetail()
         openCatForm(cat)
     }

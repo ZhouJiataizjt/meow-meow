@@ -7,6 +7,8 @@ test('校园示例覆盖9所岛内大学，每校3点，均位于对应GCJ02校�
  const now=new Date(2026,10,17,21)
  const demo=campusDemoData(now),areas=loadAreasData()
  assert.equal(demo.campuses.length,9);assert.equal(demo.records.length,27)
+ assert.equal(new Set(demo.cats.map(cat=>cat.name)).size,27)
+ assert.ok(demo.cats.every(cat=>!/(测试|示例猫)/.test(cat.name)))
  const ids=new Set(demo.records.map(r=>r.id));assert.equal(ids.size,27)
  assert.deepEqual(campusDemoData(now).records,demo.records)
  for(const campus of demo.campuses){

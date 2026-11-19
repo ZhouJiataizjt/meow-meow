@@ -90,7 +90,7 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
             id: `${record.user_id}~${record._api_id || record.id}`, is_mine: record.user_id === session?.user.id }
     }
     async function withImages(record, kind) {
-        const copy = kind === 'map_records' ? mapIdentity(record) : { ...record, is_mine: record.user_id === session?.user.id }
+        const copy = kind === 'map_records' ? mapIdentity(record) : { ...record, is_mine: record.is_mine ?? record.user_id === session?.user.id }
         const images = record.images || (record.image ? [record.image] : [])
         const avatarField = kind === 'map_records' ? 'cat_avatar' : 'avatar'
         const avatarValue = record[avatarField]
@@ -127,6 +127,11 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
         }
         return result
     }
+    handle('search_cats', async (_event, query, offset = 0) => {
+        await ready
+        requireLogin()
+        return request('/cats/search?q=' + encodeURIComponent(String(query).trim()) + '&offset=' + encodeURIComponent(offset))
+    })
     let seedingDemo = false
     handle('seed_campus_demo', async () => {
         await ready
@@ -137,7 +142,7 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
             await request('/auth/me')
             const { campusDemoData } = require('./campus_demo')
             const demo = campusDemoData()
-            const cats = new Set((await list('cats', false, true)).map(row => row.id))
+            const cats = new Set((await list('cats', false, true)).filter(row => row.is_mine !== false).map(row => String(row.id).split('~').pop()))
             const records = new Set((await list('map_records', false, true)).map(row => row.id))
             let added = 0
             for (const cat of demo.cats) if (!cats.has(cat.id)) {
@@ -211,12 +216,12 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
         handle('add_' + singular, async (_event, input) => { requireLogin(); const row = await request('/' + kind, 'POST', await prepare(input)); return kind === 'map_records' ? mapIdentity(row) : row })
         handle('update_' + singular, async (_event, input) => {
             requireLogin()
-            await request('/' + kind + '/' + encodeURIComponent(String(input.id).split('~').pop()), 'PUT', await prepare(input.cat || input.record))
+            await request('/' + kind + '/' + encodeURIComponent(kind === 'cats' ? String(input.id) : String(input.id).split('~').pop()), 'PUT', await prepare(input.cat || input.record))
             return true
         })
         handle('delete_' + singular, async (_event, input) => {
             requireLogin()
-            await request('/' + kind + '/' + encodeURIComponent(String(typeof input === 'object' ? input.id : input).split('~').pop()), 'DELETE')
+            await request('/' + kind + '/' + encodeURIComponent(kind === 'cats' ? String(typeof input === 'object' ? input.id : input) : String(typeof input === 'object' ? input.id : input).split('~').pop()), 'DELETE')
             return true
         })
     }
@@ -259,11 +264,22 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
             const existing = new Set((await list(kind, false, true)).map(row => String(row.id)))
             for (const row of payload[kind] || []) {
                 const id = String(row.id || crypto.randomUUID())
-                if (kind === 'cats') catIds.set(id, id)
+                let restoreId = id
+                if (kind === 'cats') {
+                    catIds.set(id, id)
+                    if (id.includes('~') && !existing.has(id)) {
+                        const found = await request('/cats/search?q=' + encodeURIComponent(id))
+                        if (found.items.some(cat => cat.id === id)) continue
+                        const [creator, originalId] = id.split('~')
+                        if (creator !== session.user.id) throw new Error('备份关联的共享猫咪已不存在：' + id)
+                        restoreId = originalId
+                    }
+                }
                 if (existing.has(id)) continue
-                const copy = { ...row, id }
+                const copy = { ...row, id: restoreId }
                 if (copy.cat_id) copy.cat_id = catIds.get(String(copy.cat_id)) || null
-                await request('/' + kind, 'POST', await prepare(copy))
+                const saved = await request('/' + kind, 'POST', await prepare(copy))
+                if (kind === 'cats') catIds.set(id, saved.id)
                 existing.add(id); count++
             }
         }

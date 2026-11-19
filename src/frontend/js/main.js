@@ -919,6 +919,18 @@ ipcMain.handle('get_cats', async () => {
     return readLocalCats()
 })
 
+ipcMain.handle('search_cats', async (_event, term) => {
+    const cats = await ipcMainSearchCats()
+    const query = String(term || '').trim().toLocaleLowerCase()
+    return { items: cats.filter(cat => [cat.name, cat.id].some(value => String(value || '').toLocaleLowerCase().includes(query))).slice(0, 50), nextOffset: null }
+})
+async function ipcMainSearchCats() {
+    if (!supabase) return readLocalCats()
+    const { data, error } = await supabaseWithRetry(() => supabase.from('cats').select('*').order('created_at', { ascending: false }))
+    if (error) throw error
+    return data || []
+}
+
 ipcMain.handle('add_cat', async (event, cat) => {
     cat = normalizeCat(cat)
     if (cat.avatar && !cat.avatar.startsWith('builtin:')) cat.avatar = localizeRecordImages({ images: [cat.avatar] }).images[0]

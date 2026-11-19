@@ -8,7 +8,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-BASE = 'http://127.0.0.1:8091'
+import os
+BASE = os.environ.get('MEOW_VERIFY_BASE', 'http://127.0.0.1:8091')
 users, uploads = [], []
 checks = 0
 
@@ -55,9 +56,20 @@ try:
     check(status == 201, 'create cat')
     cat_id = cat['id']
     check(request('/cats', token=other)[1] == [], 'account list isolation')
-    check(request('/cats/' + cat_id, 'PUT', {'name': 'stolen'}, other)[0] == 404, 'cross-account update denied')
-    check(request('/cats/' + cat_id, 'DELETE', token=other)[0] == 404, 'cross-account delete denied')
-    check(request('/records', 'POST', {'cat_id': cat_id}, other)[0] == 400, 'cross-account cat association denied')
+    check(request('/cats/' + cat_id, 'PUT', {'name': 'stolen'}, other)[0] == 403, 'cross-account update denied')
+    check(request('/cats/' + cat_id, 'DELETE', token=other)[0] == 403, 'cross-account delete denied')
+    check(request('/cats/search?q=' + cat_id)[0] == 401, 'cat search requires login')
+    found = request('/cats/search?q=' + cat_id, token=other)[1]['items']
+    check(any(row['id'] == cat_id for row in found), 'search another users cat by global ID')
+    check(all('notes' not in row for row in found), 'search hides creator notes')
+    check(request('/records', 'POST', {'cat_id': 'missing-cat'}, other)[0] == 400, 'missing cat association rejected')
+    status, shared_record = request('/map_records', 'POST', {'title': 'Shared cat observation', 'cat_id': cat_id, 'lat': 23.05, 'lng': 113.4}, other)
+    check(status == 201 and shared_record['cat_id'] == cat_id, 'another user observes the same cat')
+    collected = request('/cats', token=other)[1]
+    check(len(collected) == 1 and collected[0]['id'] == cat_id and not collected[0]['is_mine'], 'observed shared cat enters personal cat list')
+    check('notes' not in collected[0], 'shared cat hides creator notes')
+    check(request('/cats/' + cat_id, 'DELETE', token=token)[0] == 409, 'creator cannot delete a cat with others observations')
+
     for kind, payload in [('records', {'location': '测试校园', 'cat_id': cat_id}), ('map_records', {'title': '验证观察', 'lat': 23.05, 'lng': 113.4, 'cat_id': cat_id})]:
         status, record = request('/' + kind, 'POST', payload, token)
         check(status == 201, 'create ' + kind)
@@ -117,20 +129,40 @@ try:
     check(request('/cats/' + cat_id, 'PUT', {'name': 'Avatar verification', 'avatar': image['url']}, token)[0] == 200, 'set uploaded cat avatar')
     check(request(image['url'])[1] == png, 'linked cat avatar readable without login')
     check(request(image['url'], token=other)[1] == png, 'linked cat avatar readable by another account')
+    check(request('/cats', token=other)[1][0]['avatar'] == image['url'], 'shared cat avatar synchronizes to observer')
     public_items = request('/map_records')[1]['items']
     check(any(row['id'] == map_record['id'] and row.get('cat_avatar') == image['url'] for row in public_items), 'public map returns uploaded cat avatar')
     check(request('/cats/' + cat_id, 'PUT', {'name': 'Avatar verification', 'avatar': 'builtin:cat'}, token)[0] == 200, 'switch back to built-in cat avatar')
     check(request(image['url'])[0] == 401, 'replaced avatar is no longer public')
     import http.client
-    connection = http.client.HTTPConnection('127.0.0.1', 8091, timeout=10)
+    connection = http.client.HTTPConnection(urllib.parse.urlparse(BASE).hostname, urllib.parse.urlparse(BASE).port, timeout=10)
     connection.putrequest('POST', '/uploads')
     connection.putheader('Authorization', 'Bearer ' + token)
     connection.putheader('Content-Length', str(2 * 1024 * 1024 + 1))
     connection.endheaders()
     check(connection.getresponse().status == 413, 'oversize upload rejected before buffering')
     connection.close()
+    public_shared = [row for row in request('/map_records')[1]['items'] if row['id'] == shared_record['id']]
+    check(public_shared[0]['cat_id'] == cat_id and public_shared[0]['cat_name'] == 'Avatar verification', 'public shared sighting resolves canonical cat and latest name')
+    check(request('/cats/' + cat_id, 'PUT', {'name': 'Shared cat new name'}, token)[0] == 200, 'creator updates shared cat')
+    check(request('/cats', token=other)[1][0]['name'] == 'Shared cat new name', 'shared cat updates synchronize to observers')
+    check(request('/map_records/' + shared_record['id'], 'DELETE', token=other)[0] == 200, 'delete own shared observation')
+    check(request('/cats', token=other)[1] == [], 'removing final observation removes cat from personal list')
     check(request('/cats/' + cat_id, 'DELETE', token=token)[0] == 200, 'delete cat')
     check(not request('/records', token=token)[1][0].get('cat_id'), 'deleted cat unlinked')
+    status, twin_a = request('/cats', 'POST', {'id': 'same-local-id', 'name': 'Twin-cat'}, token)
+    check(status == 201, 'create first historical-style local cat ID')
+    status, twin_b = request('/cats', 'POST', {'id': 'same-local-id', 'name': 'Twin-cat'}, other)
+    check(status == 201 and twin_a['id'] != twin_b['id'], 'same local IDs across creators remain distinct')
+    matches = request('/cats/search?q=Twin-cat', token=other)[1]['items']
+    check(len(matches) == 2, 'same-name cats stay distinct for manual identification')
+    status, twin_record = request('/records', 'POST', {'cat_id': twin_a['id'], 'location': 'Verification'}, other)
+    check(status == 201, 'associate a foreign cat despite same local ID')
+    check(request('/cats/' + twin_a['id'], 'PUT', {'name': 'tamper'}, other)[0] == 403, 'foreign ID cannot edit a same-local-ID own cat')
+    check(request('/cats/' + twin_b['id'], 'DELETE', token=other)[0] == 200, 'delete own same-local-ID cat')
+    check(request('/records', token=other)[1][0]['cat_id'] == twin_a['id'], 'deleting same-local-ID own cat retains foreign association')
+    check(request('/records/' + twin_record['id'], 'DELETE', token=other)[0] == 200, 'clean up twin observation')
+    check(request('/cats/' + twin_a['id'], 'DELETE', token=token)[0] == 200, 'clean up twin cat')
     # Small, bounded burst, never a destructive stress test on a shared host.
     started = time.monotonic()
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:

@@ -1,6 +1,6 @@
 {
   "name": "meow-meow-map",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "A cat discovery map for recording and sharing cat sightings",
   "main": "src/frontend/js/main.js",
   "scripts": {
