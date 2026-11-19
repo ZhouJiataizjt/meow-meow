@@ -92,15 +92,17 @@ function installMeowApi({ ipcMain, app, dialog, safeStorage, compressImageForUpl
     async function withImages(record, kind) {
         const copy = kind === 'map_records' ? mapIdentity(record) : { ...record, is_mine: record.user_id === session?.user.id }
         const images = record.images || (record.image ? [record.image] : [])
-        const avatarIsUpload = /^\/uploads\/[a-f0-9-]{36}$/.test(record.avatar || '')
-        const downloads = avatarIsUpload ? [...images, record.avatar] : images
+        const avatarField = kind === 'map_records' ? 'cat_avatar' : 'avatar'
+        const avatarValue = record[avatarField]
+        const avatarIsUpload = /^\/uploads\/[a-f0-9-]{36}$/.test(avatarValue || '')
+        const downloads = avatarIsUpload ? [...images, avatarValue] : images
         const local = []
         for (const image of downloads) {
             if (!/^\/uploads\/[a-f0-9-]{36}$/.test(image)) continue
             const target = path.join(cacheDir, image.split('/').pop())
             fs.mkdirSync(cacheDir, { recursive: true })
             if (!fs.existsSync(target)) fs.writeFileSync(target, await request(image, 'GET', undefined, true))
-            if (avatarIsUpload && image === record.avatar) copy.avatar = target
+            if (avatarIsUpload && image === avatarValue) copy[avatarField] = target
             else local.push(target)
         }
         if (images.length) { copy.images = local; copy.image = local[0] || '' }

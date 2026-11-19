@@ -130,6 +130,19 @@ ipcMain.handle('select-image', async (event, allowMultiple = false) => {
     if (result.canceled || result.filePaths.length === 0) return null
     return allowMultiple ? result.filePaths : result.filePaths[0]
 })
+ipcMain.handle('save_cat_avatar_crop', async (_event, data) => {
+    if (typeof data !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 1024 * 1024) throw new Error('头像格式无效')
+    const { nativeImage } = require('electron')
+    const image = nativeImage.createFromDataURL(data)
+    const size = image.getSize()
+    if (image.isEmpty() || size.width !== 512 || size.height !== 512) throw new Error('头像尺寸无效')
+    const directory = path.join(app.getPath('userData'), 'cat-avatars')
+    fs.mkdirSync(directory, { recursive: true })
+    const target = path.join(directory, randomUUID() + '.jpg')
+    fs.writeFileSync(target, image.toJPEG(90))
+    return target
+})
+
 ipcMain.handle('select_profile_avatar', async event => {
     const options = { title: '选择个人头像', filters: [{ name: '头像图片', extensions: ['jpg', 'jpeg', 'png'] }], properties: ['openFile'] }
     const owner = BrowserWindow.fromWebContents(event.sender)

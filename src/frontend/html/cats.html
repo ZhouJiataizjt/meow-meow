@@ -217,7 +217,7 @@
         document.getElementById('cat-avatar-status').textContent = preset?.name || (value ? '自选图片' : '自动分配头像')
     }
     async function selectCatAvatar() {
-        try { const selected = await ipcRenderer.invoke('select-image'); if (selected) setCatAvatar(selected) }
+        try { const selected = await ipcRenderer.invoke('select-image'); if (selected) { const cropped = await require('../js/cat_avatar_crop').cropCatAvatar(selected); if (cropped) setCatAvatar(cropped) } }
         catch (error) { document.getElementById('cat-avatar-status').textContent = '选择头像失败：' + error.message }
     }
     document.getElementById('cat-search').addEventListener('input', renderGrid)
